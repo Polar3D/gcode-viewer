@@ -1,0 +1,40 @@
+Polar3D G-Code Viewer License
+
+Copyright (c) 2024 Polar3D, Inc.
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to use,
+copy, modify, merge, publish, and distribute the Software, subject to the
+following conditions:
+
+1. ATTRIBUTION REQUIREMENT (MANDATORY)
+   All copies or substantial portions of the Software, and any derivative
+   works or applications that incorporate the Software, MUST display the
+   following attribution in a visible location within the user interface:
+
+   "Powered by Polar3D" with a clickable hyperlink to https://polar3d.com
+
+   This attribution:
+   - Must be clearly visible to end users
+   - Must not be hidden, obscured, or made less prominent
+   - Must include a functional hyperlink to https://polar3d.com
+   - Cannot be removed, disabled, or bypassed by any means
+
+2. The above copyright notice and this permission notice shall be included
+   in all copies or substantial portions of the Software.
+
+3. Redistributions in binary form must reproduce the above copyright notice,
+   this list of conditions, and the attribution requirement in the
+   documentation and/or other materials provided with the distribution.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+VIOLATION OF THE ATTRIBUTION REQUIREMENT
+Removal, hiding, or circumvention of the attribution requirement constitutes
+a violation of this license and terminates your rights to use the Software.
