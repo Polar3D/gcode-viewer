@@ -63,8 +63,10 @@ export interface GCodePrintInfo {
 }
 
 export interface GCodeViewerOptions {
-  /** Line width for extruded paths in world units/mm (default: 0.45, typical nozzle width) */
+  /** Line width for extruded paths in mm (default: 0.4, typical nozzle width) */
   lineWidth?: number;
+  /** Layer height for extruded paths in mm (default: 0.2, typical layer height) */
+  layerHeight?: number;
   /** Whether to hide purge/prime lines (default: true) */
   hidePurgeLines?: boolean;
   /** Initial color scheme: 'pathType' or 'height' (default: 'pathType') */
@@ -81,6 +83,7 @@ export interface GCodeViewerOptions {
 /** Internal type for resolved options */
 export interface ResolvedGCodeViewerOptions {
   lineWidth: number;
+  layerHeight: number;
   hidePurgeLines: boolean;
   colorScheme: 'pathType' | 'height';
   showTravelMoves: boolean;

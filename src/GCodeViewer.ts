@@ -14,6 +14,112 @@ import {
 import { parsePathType, parsePrintInfoFromLine } from './parser';
 import { injectBranding } from './branding';
 
+/**
+ * Create ribbon geometry for extrusion paths
+ * Creates flat, wide ribbons that look like actual 3D printed layers
+ */
+function createRibbonGeometry(
+  vertices: number[],
+  width: number,
+  height: number
+): THREE.BufferGeometry {
+  const positions: number[] = [];
+  const normals: number[] = [];
+  const indices: number[] = [];
+
+  const halfWidth = width / 2;
+  const halfHeight = height / 2;
+
+  // Process line segments (each segment is 6 floats: x1,y1,z1, x2,y2,z2)
+  for (let i = 0; i < vertices.length; i += 6) {
+    const x1 = vertices[i];
+    const y1 = vertices[i + 1];
+    const z1 = vertices[i + 2];
+    const x2 = vertices[i + 3];
+    const y2 = vertices[i + 4];
+    const z2 = vertices[i + 5];
+
+    // Direction vector
+    const dx = x2 - x1;
+    const dy = y2 - y1;
+    const length = Math.sqrt(dx * dx + dy * dy);
+
+    if (length < 0.001) continue; // Skip zero-length segments
+
+    // Perpendicular vector (in XY plane) for width
+    const perpX = -dy / length;
+    const perpY = dx / length;
+
+    // Create 8 vertices for a box segment (4 at start, 4 at end)
+    const baseIndex = positions.length / 3;
+
+    // Start face vertices (bottom-left, bottom-right, top-right, top-left)
+    positions.push(
+      x1 + perpX * halfWidth, y1 + perpY * halfWidth, z1 - halfHeight, // 0: bottom-left
+      x1 - perpX * halfWidth, y1 - perpY * halfWidth, z1 - halfHeight, // 1: bottom-right
+      x1 - perpX * halfWidth, y1 - perpY * halfWidth, z1 + halfHeight, // 2: top-right
+      x1 + perpX * halfWidth, y1 + perpY * halfWidth, z1 + halfHeight  // 3: top-left
+    );
+
+    // End face vertices
+    positions.push(
+      x2 + perpX * halfWidth, y2 + perpY * halfWidth, z2 - halfHeight, // 4: bottom-left
+      x2 - perpX * halfWidth, y2 - perpY * halfWidth, z2 - halfHeight, // 5: bottom-right
+      x2 - perpX * halfWidth, y2 - perpY * halfWidth, z2 + halfHeight, // 6: top-right
+      x2 + perpX * halfWidth, y2 + perpY * halfWidth, z2 + halfHeight  // 7: top-left
+    );
+
+    // Normals (approximate - pointing outward)
+    // Start face
+    normals.push(
+      perpX, perpY, -1,  // bottom-left
+      -perpX, -perpY, -1, // bottom-right
+      -perpX, -perpY, 1,  // top-right
+      perpX, perpY, 1     // top-left
+    );
+    // End face
+    normals.push(
+      perpX, perpY, -1,
+      -perpX, -perpY, -1,
+      -perpX, -perpY, 1,
+      perpX, perpY, 1
+    );
+
+    // Indices for 6 faces (12 triangles)
+    // Top face (z+)
+    indices.push(baseIndex + 3, baseIndex + 7, baseIndex + 6);
+    indices.push(baseIndex + 3, baseIndex + 6, baseIndex + 2);
+
+    // Bottom face (z-)
+    indices.push(baseIndex + 0, baseIndex + 5, baseIndex + 4);
+    indices.push(baseIndex + 0, baseIndex + 1, baseIndex + 5);
+
+    // Left face
+    indices.push(baseIndex + 0, baseIndex + 4, baseIndex + 7);
+    indices.push(baseIndex + 0, baseIndex + 7, baseIndex + 3);
+
+    // Right face
+    indices.push(baseIndex + 1, baseIndex + 2, baseIndex + 6);
+    indices.push(baseIndex + 1, baseIndex + 6, baseIndex + 5);
+
+    // Front face (end cap)
+    indices.push(baseIndex + 4, baseIndex + 5, baseIndex + 6);
+    indices.push(baseIndex + 4, baseIndex + 6, baseIndex + 7);
+
+    // Back face (start cap)
+    indices.push(baseIndex + 0, baseIndex + 3, baseIndex + 2);
+    indices.push(baseIndex + 0, baseIndex + 2, baseIndex + 1);
+  }
+
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+  geometry.setAttribute('normal', new THREE.Float32BufferAttribute(normals, 3));
+  geometry.setIndex(indices);
+  geometry.computeVertexNormals(); // Recalculate for smooth shading
+
+  return geometry;
+}
+
 interface PathSegment {
   vertices: number[];
   pathType: PathType;
@@ -55,7 +161,8 @@ export class GCodeViewer {
 
   constructor(options: GCodeViewerOptions = {}) {
     this.options = {
-      lineWidth: options.lineWidth ?? 0.2,
+      lineWidth: options.lineWidth ?? 0.4,
+      layerHeight: options.layerHeight ?? 0.2,
       hidePurgeLines: options.hidePurgeLines ?? true,
       colorScheme: options.colorScheme ?? 'pathType',
       showTravelMoves: options.showTravelMoves ?? false,
@@ -405,37 +512,43 @@ export class GCodeViewer {
     const sortedZHeights = Array.from(layersData.keys()).sort((a, b) => a - b);
     const totalLayers = sortedZHeights.length;
 
+    // Detect layer height from g-code for ribbon height
+    let detectedLayerHeight = this.options.layerHeight;
+    if (sortedZHeights.length > 1) {
+      detectedLayerHeight = sortedZHeights[1] - sortedZHeights[0];
+    }
+
     sortedZHeights.forEach((z, index) => {
       const layerData = layersData.get(z)!;
       const layerGroup = new THREE.Group();
       layerGroup.name = `layer_${index}_z${z.toFixed(3)}`;
 
-      // Create line for each path type segment
+      // Create ribbon mesh for each path type segment
       for (const segment of layerData.segments) {
-        if (segment.vertices.length > 0) {
-          const lineGeometry = new LineGeometry();
-          lineGeometry.setPositions(segment.vertices);
+        if (segment.vertices.length >= 6) {
+          const ribbonGeometry = createRibbonGeometry(
+            segment.vertices,
+            this.options.lineWidth,
+            detectedLayerHeight
+          );
 
           const color = new THREE.Color(PATH_TYPE_COLORS[segment.pathType] || '#888888');
 
-          const lineMaterial = new LineMaterial({
-            color: color.getHex(),
-            linewidth: this.options.lineWidth,
-            worldUnits: true,
-            dashed: false,
-            alphaToCoverage: false,
+          const ribbonMaterial = new THREE.MeshStandardMaterial({
+            color: color,
+            roughness: 0.6,
+            metalness: 0.1,
+            side: THREE.DoubleSide,
           });
-          lineMaterial.resolution.set(window.innerWidth, window.innerHeight);
 
-          const line = new Line2(lineGeometry, lineMaterial);
-          line.computeLineDistances();
-          line.name = `extruded_${segment.pathType}`;
-          line.userData['pathType'] = segment.pathType;
-          layerGroup.add(line);
+          const ribbonMesh = new THREE.Mesh(ribbonGeometry, ribbonMaterial);
+          ribbonMesh.name = `extruded_${segment.pathType}`;
+          ribbonMesh.userData['pathType'] = segment.pathType;
+          layerGroup.add(ribbonMesh);
         }
       }
 
-      // Create travel path geometry
+      // Create travel path geometry (still use lines for travel)
       if (layerData.pathVertex.length > 0) {
         const pathGeometry = new LineGeometry();
         pathGeometry.setPositions(layerData.pathVertex);
@@ -577,7 +690,7 @@ export class GCodeViewer {
   private applyPathTypeFilter(): void {
     this.layers.forEach((layer) => {
       layer.object.traverse((child) => {
-        if (child instanceof Line2 && child.userData['pathType']) {
+        if ((child instanceof THREE.Mesh || child instanceof Line2) && child.userData['pathType']) {
           const isTravel = child.userData['pathType'] === 'travel';
           if (isTravel) return; // Travel handled separately
 
@@ -647,12 +760,12 @@ export class GCodeViewer {
         color.setHSL(hue < 0 ? hue + 1 : hue, 0.8, 0.55);
 
         layer.object.traverse((child) => {
-          if (
-            child instanceof Line2 &&
-            child.userData['pathType'] &&
-            child.userData['pathType'] !== 'travel'
-          ) {
-            (child.material as LineMaterial).color = color;
+          if (child.userData['pathType'] && child.userData['pathType'] !== 'travel') {
+            if (child instanceof THREE.Mesh) {
+              (child.material as THREE.MeshStandardMaterial).color = color;
+            } else if (child instanceof Line2) {
+              (child.material as LineMaterial).color = color;
+            }
           }
         });
       });
@@ -660,10 +773,14 @@ export class GCodeViewer {
       // Color by path type
       this.layers.forEach((layer) => {
         layer.object.traverse((child) => {
-          if (child instanceof Line2 && child.userData['pathType']) {
+          if (child.userData['pathType']) {
             const pathType = child.userData['pathType'] as PathType;
             const color = new THREE.Color(PATH_TYPE_COLORS[pathType] || '#888888');
-            (child.material as LineMaterial).color = color;
+            if (child instanceof THREE.Mesh) {
+              (child.material as THREE.MeshStandardMaterial).color = color;
+            } else if (child instanceof Line2) {
+              (child.material as LineMaterial).color = color;
+            }
           }
         });
       });
