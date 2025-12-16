@@ -302,7 +302,7 @@ var GCodeViewer = class {
     this.printInfo = null;
     this.brandingInjected = false;
     this.options = {
-      lineWidth: options.lineWidth ?? 2,
+      lineWidth: options.lineWidth ?? 0.45,
       hidePurgeLines: options.hidePurgeLines ?? true,
       colorScheme: options.colorScheme ?? "pathType",
       showTravelMoves: options.showTravelMoves ?? false,
@@ -560,7 +560,7 @@ var GCodeViewer = class {
           const lineMaterial = new import_LineMaterial.LineMaterial({
             color: color.getHex(),
             linewidth: this.options.lineWidth,
-            worldUnits: false,
+            worldUnits: true,
             dashed: false,
             alphaToCoverage: false
           });
@@ -577,8 +577,8 @@ var GCodeViewer = class {
         pathGeometry.setPositions(layerData.pathVertex);
         const pathMaterial = new import_LineMaterial.LineMaterial({
           color: 8947848,
-          linewidth: 1,
-          worldUnits: false,
+          linewidth: 0.1,
+          worldUnits: true,
           transparent: true,
           opacity: 0.4
         });

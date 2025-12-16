@@ -55,7 +55,7 @@ export class GCodeViewer {
 
   constructor(options: GCodeViewerOptions = {}) {
     this.options = {
-      lineWidth: options.lineWidth ?? 2,
+      lineWidth: options.lineWidth ?? 0.45,
       hidePurgeLines: options.hidePurgeLines ?? true,
       colorScheme: options.colorScheme ?? 'pathType',
       showTravelMoves: options.showTravelMoves ?? false,
@@ -421,7 +421,7 @@ export class GCodeViewer {
           const lineMaterial = new LineMaterial({
             color: color.getHex(),
             linewidth: this.options.lineWidth,
-            worldUnits: false,
+            worldUnits: true,
             dashed: false,
             alphaToCoverage: false,
           });
@@ -442,8 +442,8 @@ export class GCodeViewer {
 
         const pathMaterial = new LineMaterial({
           color: 0x888888,
-          linewidth: 1,
-          worldUnits: false,
+          linewidth: 0.1,
+          worldUnits: true,
           transparent: true,
           opacity: 0.4,
         });

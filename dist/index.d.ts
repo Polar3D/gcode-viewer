@@ -30,7 +30,7 @@ interface GCodePrintInfo {
     pathTypes: PathType[];
 }
 interface GCodeViewerOptions {
-    /** Line width for extruded paths (default: 2) */
+    /** Line width for extruded paths in world units/mm (default: 0.45, typical nozzle width) */
     lineWidth?: number;
     /** Whether to hide purge/prime lines (default: true) */
     hidePurgeLines?: boolean;
