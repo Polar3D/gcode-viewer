@@ -249,114 +249,6 @@ var BRANDING_CSS = `
 `;
 
 // src/GCodeViewer.ts
-function createRibbonGeometry(vertices, width, height) {
-  const positions = [];
-  const normals = [];
-  const indices = [];
-  const halfWidth = width / 2;
-  const halfHeight = height / 2;
-  for (let i = 0; i < vertices.length; i += 6) {
-    const x1 = vertices[i];
-    const y1 = vertices[i + 1];
-    const z1 = vertices[i + 2];
-    const x2 = vertices[i + 3];
-    const y2 = vertices[i + 4];
-    const z2 = vertices[i + 5];
-    const dx = x2 - x1;
-    const dy = y2 - y1;
-    const length = Math.sqrt(dx * dx + dy * dy);
-    if (length < 1e-3) continue;
-    const perpX = -dy / length;
-    const perpY = dx / length;
-    const baseIndex = positions.length / 3;
-    positions.push(
-      x1 + perpX * halfWidth,
-      y1 + perpY * halfWidth,
-      z1 - halfHeight,
-      // 0: bottom-left
-      x1 - perpX * halfWidth,
-      y1 - perpY * halfWidth,
-      z1 - halfHeight,
-      // 1: bottom-right
-      x1 - perpX * halfWidth,
-      y1 - perpY * halfWidth,
-      z1 + halfHeight,
-      // 2: top-right
-      x1 + perpX * halfWidth,
-      y1 + perpY * halfWidth,
-      z1 + halfHeight
-      // 3: top-left
-    );
-    positions.push(
-      x2 + perpX * halfWidth,
-      y2 + perpY * halfWidth,
-      z2 - halfHeight,
-      // 4: bottom-left
-      x2 - perpX * halfWidth,
-      y2 - perpY * halfWidth,
-      z2 - halfHeight,
-      // 5: bottom-right
-      x2 - perpX * halfWidth,
-      y2 - perpY * halfWidth,
-      z2 + halfHeight,
-      // 6: top-right
-      x2 + perpX * halfWidth,
-      y2 + perpY * halfWidth,
-      z2 + halfHeight
-      // 7: top-left
-    );
-    normals.push(
-      perpX,
-      perpY,
-      -1,
-      // bottom-left
-      -perpX,
-      -perpY,
-      -1,
-      // bottom-right
-      -perpX,
-      -perpY,
-      1,
-      // top-right
-      perpX,
-      perpY,
-      1
-      // top-left
-    );
-    normals.push(
-      perpX,
-      perpY,
-      -1,
-      -perpX,
-      -perpY,
-      -1,
-      -perpX,
-      -perpY,
-      1,
-      perpX,
-      perpY,
-      1
-    );
-    indices.push(baseIndex + 3, baseIndex + 7, baseIndex + 6);
-    indices.push(baseIndex + 3, baseIndex + 6, baseIndex + 2);
-    indices.push(baseIndex + 0, baseIndex + 5, baseIndex + 4);
-    indices.push(baseIndex + 0, baseIndex + 1, baseIndex + 5);
-    indices.push(baseIndex + 0, baseIndex + 4, baseIndex + 7);
-    indices.push(baseIndex + 0, baseIndex + 7, baseIndex + 3);
-    indices.push(baseIndex + 1, baseIndex + 2, baseIndex + 6);
-    indices.push(baseIndex + 1, baseIndex + 6, baseIndex + 5);
-    indices.push(baseIndex + 4, baseIndex + 5, baseIndex + 6);
-    indices.push(baseIndex + 4, baseIndex + 6, baseIndex + 7);
-    indices.push(baseIndex + 0, baseIndex + 3, baseIndex + 2);
-    indices.push(baseIndex + 0, baseIndex + 2, baseIndex + 1);
-  }
-  const geometry = new THREE.BufferGeometry();
-  geometry.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
-  geometry.setAttribute("normal", new THREE.Float32BufferAttribute(normals, 3));
-  geometry.setIndex(indices);
-  geometry.computeVertexNormals();
-  return geometry;
-}
 var GCodeViewer = class {
   constructor(options = {}) {
     this.layers = [];
@@ -365,8 +257,7 @@ var GCodeViewer = class {
     this.printInfo = null;
     this.brandingInjected = false;
     this.options = {
-      lineWidth: options.lineWidth ?? 0.4,
-      layerHeight: options.layerHeight ?? 0.2,
+      lineWidth: options.lineWidth ?? 2,
       hidePurgeLines: options.hidePurgeLines ?? true,
       colorScheme: options.colorScheme ?? "pathType",
       showTravelMoves: options.showTravelMoves ?? false,
@@ -612,32 +503,28 @@ var GCodeViewer = class {
     this.layers = [];
     const sortedZHeights = Array.from(layersData.keys()).sort((a, b) => a - b);
     const totalLayers = sortedZHeights.length;
-    let detectedLayerHeight = this.options.layerHeight;
-    if (sortedZHeights.length > 1) {
-      detectedLayerHeight = sortedZHeights[1] - sortedZHeights[0];
-    }
     sortedZHeights.forEach((z, index) => {
       const layerData = layersData.get(z);
       const layerGroup = new THREE.Group();
       layerGroup.name = `layer_${index}_z${z.toFixed(3)}`;
       for (const segment of layerData.segments) {
-        if (segment.vertices.length >= 6) {
-          const ribbonGeometry = createRibbonGeometry(
-            segment.vertices,
-            this.options.lineWidth,
-            detectedLayerHeight
-          );
+        if (segment.vertices.length > 0) {
+          const lineGeometry = new LineGeometry();
+          lineGeometry.setPositions(segment.vertices);
           const color = new THREE.Color(PATH_TYPE_COLORS[segment.pathType] || "#888888");
-          const ribbonMaterial = new THREE.MeshStandardMaterial({
-            color,
-            roughness: 0.6,
-            metalness: 0.1,
-            side: THREE.DoubleSide
+          const lineMaterial = new LineMaterial({
+            color: color.getHex(),
+            linewidth: this.options.lineWidth,
+            worldUnits: false,
+            dashed: false,
+            alphaToCoverage: false
           });
-          const ribbonMesh = new THREE.Mesh(ribbonGeometry, ribbonMaterial);
-          ribbonMesh.name = `extruded_${segment.pathType}`;
-          ribbonMesh.userData["pathType"] = segment.pathType;
-          layerGroup.add(ribbonMesh);
+          lineMaterial.resolution.set(window.innerWidth, window.innerHeight);
+          const line = new Line2(lineGeometry, lineMaterial);
+          line.computeLineDistances();
+          line.name = `extruded_${segment.pathType}`;
+          line.userData["pathType"] = segment.pathType;
+          layerGroup.add(line);
         }
       }
       if (layerData.pathVertex.length > 0) {
@@ -645,8 +532,8 @@ var GCodeViewer = class {
         pathGeometry.setPositions(layerData.pathVertex);
         const pathMaterial = new LineMaterial({
           color: 8947848,
-          linewidth: 0.1,
-          worldUnits: true,
+          linewidth: 1,
+          worldUnits: false,
           transparent: true,
           opacity: 0.4
         });
@@ -756,7 +643,7 @@ var GCodeViewer = class {
   applyPathTypeFilter() {
     this.layers.forEach((layer) => {
       layer.object.traverse((child) => {
-        if ((child instanceof THREE.Mesh || child instanceof Line2) && child.userData["pathType"]) {
+        if (child instanceof Line2 && child.userData["pathType"]) {
           const isTravel = child.userData["pathType"] === "travel";
           if (isTravel) return;
           if (this.pathTypeFilter === null) {
@@ -813,26 +700,18 @@ var GCodeViewer = class {
         const hue = 0.6 - heightRatio * 0.55;
         color.setHSL(hue < 0 ? hue + 1 : hue, 0.8, 0.55);
         layer.object.traverse((child) => {
-          if (child.userData["pathType"] && child.userData["pathType"] !== "travel") {
-            if (child instanceof THREE.Mesh) {
-              child.material.color = color;
-            } else if (child instanceof Line2) {
-              child.material.color = color;
-            }
+          if (child instanceof Line2 && child.userData["pathType"] && child.userData["pathType"] !== "travel") {
+            child.material.color = color;
           }
         });
       });
     } else {
       this.layers.forEach((layer) => {
         layer.object.traverse((child) => {
-          if (child.userData["pathType"]) {
+          if (child instanceof Line2 && child.userData["pathType"]) {
             const pathType = child.userData["pathType"];
             const color = new THREE.Color(PATH_TYPE_COLORS[pathType] || "#888888");
-            if (child instanceof THREE.Mesh) {
-              child.material.color = color;
-            } else if (child instanceof Line2) {
-              child.material.color = color;
-            }
+            child.material.color = color;
           }
         });
       });
