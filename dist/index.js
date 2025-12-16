@@ -302,7 +302,7 @@ var GCodeViewer = class {
     this.printInfo = null;
     this.brandingInjected = false;
     this.options = {
-      lineWidth: options.lineWidth ?? 0.45,
+      lineWidth: options.lineWidth ?? 0.2,
       hidePurgeLines: options.hidePurgeLines ?? true,
       colorScheme: options.colorScheme ?? "pathType",
       showTravelMoves: options.showTravelMoves ?? false,
