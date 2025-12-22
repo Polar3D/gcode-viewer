@@ -1,6 +1,6 @@
 {
   "name": "@polar3d/gcode-viewer",
-  "version": "2.1.0",
+  "version": "2.1.1",
   "description": "A Three.js-based G-code viewer with layer-by-layer visualization, 3D tube rendering, G2/G3 arc support, color themes, thumbnails, and print info extraction",
   "main": "dist/index.js",
   "module": "dist/index.mjs",
