@@ -23,21 +23,21 @@ export type PathType =
 
 // Default colors for each path type
 export const PATH_TYPE_COLORS: Record<PathType, string> = {
-  outer_perimeter: '#00CED1', // Cyan/Teal
-  inner_perimeter: '#32CD32', // Lime Green
-  infill: '#FFA500', // Orange
-  solid_infill: '#FF6B6B', // Coral/Red
-  top_solid_infill: '#FF6B6B', // Same as solid
-  bottom_solid_infill: '#FF6B6B', // Same as solid
-  bridge: '#40E0D0', // Turquoise
-  skirt: '#6495ED', // Cornflower Blue
-  brim: '#6495ED', // Same as skirt
-  support: '#DDA0DD', // Plum
-  support_interface: '#DA70D6', // Orchid
-  prime_tower: '#B8860B', // Dark Goldenrod
-  wipe_tower: '#B8860B', // Same as prime tower
-  travel: '#888888', // Gray
-  unknown: '#E8E8E8', // Light gray (User Sequence)
+  outer_perimeter: '#4285f4', // Blue (Outer wall)
+  inner_perimeter: '#00ffff', // Cyan (Inner wall)
+  infill: '#ff8800', // Orange (Sparse infill)
+  solid_infill: '#ff8800', // Orange (Internal solid infill)
+  top_solid_infill: '#ff0000', // Red (Top surface)
+  bottom_solid_infill: '#0088ff', // Blue (Bottom surface)
+  bridge: '#ff00ff', // Magenta (Bridge)
+  skirt: '#00ff88', // Green (Skirt)
+  brim: '#00ff88', // Same as skirt
+  support: '#0000ff', // Blue (Support)
+  support_interface: '#0000ff', // Same as support
+  prime_tower: '#888800', // Olive (Gap infill)
+  wipe_tower: '#888800', // Same as prime tower
+  travel: '#808080', // Gray (Unknown/travel)
+  unknown: '#aaaaaa', // Light gray (Custom)
 };
 
 /** Custom colors for path types - used for color themes */
