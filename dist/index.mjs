@@ -3,6 +3,7 @@ import * as THREE from "three";
 import { Line2 } from "three/examples/jsm/lines/Line2.js";
 import { LineMaterial } from "three/examples/jsm/lines/LineMaterial.js";
 import { LineGeometry } from "three/examples/jsm/lines/LineGeometry.js";
+import * as BufferGeometryUtils from "three/examples/jsm/utils/BufferGeometryUtils.js";
 
 // src/types.ts
 var PATH_TYPE_COLORS = {
@@ -37,6 +38,98 @@ var PATH_TYPE_COLORS = {
   unknown: "#E8E8E8"
   // Light gray (User Sequence)
 };
+var COLOR_THEMES = [
+  {
+    id: "default",
+    name: "Default",
+    colors: {}
+    // Uses PATH_TYPE_COLORS
+  },
+  {
+    id: "ocean",
+    name: "Ocean",
+    colors: {
+      outer_perimeter: "#006994",
+      inner_perimeter: "#40E0D0",
+      infill: "#5F9EA0",
+      solid_infill: "#20B2AA",
+      top_solid_infill: "#48D1CC",
+      bottom_solid_infill: "#008B8B",
+      bridge: "#00CED1",
+      skirt: "#87CEEB",
+      brim: "#87CEEB",
+      support: "#B0C4DE",
+      support_interface: "#ADD8E6",
+      prime_tower: "#4682B4",
+      wipe_tower: "#4682B4",
+      travel: "#1E90FF",
+      unknown: "#E0FFFF"
+    }
+  },
+  {
+    id: "forest",
+    name: "Forest",
+    colors: {
+      outer_perimeter: "#228B22",
+      inner_perimeter: "#32CD32",
+      infill: "#8FBC8F",
+      solid_infill: "#2E8B57",
+      top_solid_infill: "#00FA9A",
+      bottom_solid_infill: "#006400",
+      bridge: "#9ACD32",
+      skirt: "#6B8E23",
+      brim: "#6B8E23",
+      support: "#8B4513",
+      support_interface: "#A0522D",
+      prime_tower: "#556B2F",
+      wipe_tower: "#556B2F",
+      travel: "#90EE90",
+      unknown: "#F0FFF0"
+    }
+  },
+  {
+    id: "sunset",
+    name: "Sunset",
+    colors: {
+      outer_perimeter: "#FF4500",
+      inner_perimeter: "#FF6347",
+      infill: "#FF8C00",
+      solid_infill: "#DC143C",
+      top_solid_infill: "#FF69B4",
+      bottom_solid_infill: "#8B0000",
+      bridge: "#FFD700",
+      skirt: "#FFA07A",
+      brim: "#FFA07A",
+      support: "#DDA0DD",
+      support_interface: "#EE82EE",
+      prime_tower: "#CD853F",
+      wipe_tower: "#CD853F",
+      travel: "#FF1493",
+      unknown: "#FFF0F5"
+    }
+  },
+  {
+    id: "monochrome",
+    name: "Monochrome",
+    colors: {
+      outer_perimeter: "#333333",
+      inner_perimeter: "#555555",
+      infill: "#777777",
+      solid_infill: "#444444",
+      top_solid_infill: "#666666",
+      bottom_solid_infill: "#222222",
+      bridge: "#888888",
+      skirt: "#999999",
+      brim: "#999999",
+      support: "#AAAAAA",
+      support_interface: "#BBBBBB",
+      prime_tower: "#505050",
+      wipe_tower: "#505050",
+      travel: "#CCCCCC",
+      unknown: "#DDDDDD"
+    }
+  }
+];
 var WHITELISTED_DOMAINS = [
   "polar3d.com",
   "www.polar3d.com"
@@ -248,6 +341,117 @@ var BRANDING_CSS = `
 }
 `;
 
+// src/ExtrusionGeometry.ts
+import { BufferGeometry, Float32BufferAttribute, Vector2, Vector3 } from "three";
+var ExtrusionGeometry = class extends BufferGeometry {
+  constructor(points = [new Vector3()], lineWidth = 0.4, lineHeight = 0.2, radialSegments = 8) {
+    super();
+    this.type = "ExtrusionGeometry";
+    this.parameters = {
+      points,
+      lineWidth,
+      lineHeight,
+      radialSegments,
+      closed: false
+    };
+    if (points.length < 2) {
+      return;
+    }
+    const vertex = new Vector3();
+    const normal = new Vector3();
+    const uv = new Vector2();
+    const vertices = [];
+    const normals = [];
+    const uvs = [];
+    const indices = [];
+    const halfWidth = lineWidth / 2;
+    const halfHeight = lineHeight / 2;
+    generateBufferData();
+    this.setIndex(indices);
+    this.setAttribute("position", new Float32BufferAttribute(vertices, 3));
+    this.setAttribute("normal", new Float32BufferAttribute(normals, 3));
+    this.setAttribute("uv", new Float32BufferAttribute(uvs, 2));
+    function generateBufferData() {
+      for (let i = 0; i < points.length; i++) {
+        generateSegment(i);
+      }
+      generateSegment(points.length - 1);
+      generateUVs();
+      generateIndices();
+    }
+    function generateSegment(i) {
+      const [P, N, B] = computeCornerAngles(i);
+      for (let j = 0; j <= radialSegments; j++) {
+        const v = j / radialSegments * Math.PI * 2;
+        const sin = Math.sin(v);
+        const cos = -Math.cos(v);
+        normal.x = cos * N.x + sin * B.x;
+        normal.y = cos * N.y + sin * B.y;
+        normal.z = cos * N.z + sin * B.z;
+        normal.normalize();
+        normals.push(normal.x, normal.y, normal.z);
+        vertex.x = P.x + halfWidth * normal.x;
+        vertex.y = P.y + halfWidth * normal.y;
+        vertex.z = P.z + halfHeight * normal.z;
+        vertices.push(vertex.x, vertex.y, vertex.z);
+      }
+    }
+    function generateIndices() {
+      for (let j = 1; j < points.length; j++) {
+        for (let i = 1; i <= radialSegments; i++) {
+          const a = (radialSegments + 1) * (j - 1) + (i - 1);
+          const b = (radialSegments + 1) * j + (i - 1);
+          const c = (radialSegments + 1) * j + i;
+          const d = (radialSegments + 1) * (j - 1) + i;
+          indices.push(a, b, d);
+          indices.push(b, c, d);
+        }
+      }
+    }
+    function generateUVs() {
+      for (let i = 0; i < points.length; i++) {
+        for (let j = 0; j <= radialSegments; j++) {
+          uv.x = i / points.length;
+          uv.y = j / radialSegments;
+          uvs.push(uv.x, uv.y);
+        }
+      }
+    }
+    function computeCornerAngles(i) {
+      const P = points[i];
+      const tangent = new Vector3();
+      const N = new Vector3();
+      const B = new Vector3();
+      const vec = new Vector3();
+      const prevPoint = points[i - 1] || P;
+      const nextPoint = points[i + 1] || P;
+      tangent.copy(P).sub(prevPoint).normalize().add(nextPoint.clone().sub(P).normalize()).normalize();
+      if (tangent.lengthSq() < 1e-3) {
+        tangent.set(0, 0, 1);
+      }
+      let min = Number.MAX_VALUE;
+      const tx = Math.abs(tangent.x);
+      const ty = Math.abs(tangent.y);
+      const tz = Math.abs(tangent.z);
+      if (tx <= min) {
+        min = tx;
+        N.set(1, 0, 0);
+      }
+      if (ty <= min) {
+        min = ty;
+        N.set(0, 1, 0);
+      }
+      if (tz <= min) {
+        N.set(0, 0, 1);
+      }
+      vec.crossVectors(tangent, N).normalize();
+      N.crossVectors(tangent, vec);
+      B.crossVectors(tangent, N);
+      return [P, N, B];
+    }
+  }
+};
+
 // src/GCodeViewer.ts
 var GCodeViewer = class {
   constructor(options = {}) {
@@ -256,12 +460,19 @@ var GCodeViewer = class {
     this.pathTypeFilter = null;
     this.printInfo = null;
     this.brandingInjected = false;
+    this.lineMaterials = /* @__PURE__ */ new Map();
+    this.tubeMaterials = /* @__PURE__ */ new Map();
     this.options = {
       lineWidth: options.lineWidth ?? 2,
       hidePurgeLines: options.hidePurgeLines ?? true,
       colorScheme: options.colorScheme ?? "pathType",
       showTravelMoves: options.showTravelMoves ?? false,
-      container: options.container
+      container: options.container,
+      renderTubes: options.renderTubes ?? false,
+      extrusionWidth: options.extrusionWidth ?? 0.4,
+      lineHeight: options.lineHeight ?? 0.2,
+      radialSegments: options.radialSegments ?? 4,
+      customColors: options.customColors
     };
   }
   /**
@@ -507,24 +718,59 @@ var GCodeViewer = class {
       const layerData = layersData.get(z);
       const layerGroup = new THREE.Group();
       layerGroup.name = `layer_${index}_z${z.toFixed(3)}`;
-      for (const segment of layerData.segments) {
-        if (segment.vertices.length > 0) {
-          const lineGeometry = new LineGeometry();
-          lineGeometry.setPositions(segment.vertices);
-          const color = new THREE.Color(PATH_TYPE_COLORS[segment.pathType] || "#888888");
-          const lineMaterial = new LineMaterial({
-            color: color.getHex(),
-            linewidth: this.options.lineWidth,
-            worldUnits: false,
-            dashed: false,
-            alphaToCoverage: false
-          });
-          lineMaterial.resolution.set(window.innerWidth, window.innerHeight);
-          const line = new Line2(lineGeometry, lineMaterial);
-          line.computeLineDistances();
-          line.name = `extruded_${segment.pathType}`;
-          line.userData["pathType"] = segment.pathType;
-          layerGroup.add(line);
+      if (this.options.renderTubes) {
+        const geometriesByColor = /* @__PURE__ */ new Map();
+        for (const segment of layerData.segments) {
+          if (segment.vertices.length < 6) continue;
+          const color = this.getPathColor(segment.pathType, index, totalLayers);
+          const points = [];
+          for (let i = 0; i < segment.vertices.length; i += 3) {
+            points.push(new THREE.Vector3(
+              segment.vertices[i],
+              segment.vertices[i + 1],
+              segment.vertices[i + 2]
+            ));
+          }
+          if (points.length < 2) continue;
+          const geometry = new ExtrusionGeometry(
+            points,
+            this.options.extrusionWidth,
+            this.options.lineHeight,
+            this.options.radialSegments
+          );
+          if (geometry.attributes["position"]?.count > 0) {
+            if (!geometriesByColor.has(color)) {
+              geometriesByColor.set(color, []);
+            }
+            geometriesByColor.get(color).push(geometry);
+          }
+        }
+        for (const [color, geometries] of geometriesByColor) {
+          if (geometries.length === 0) continue;
+          const mergedGeometry = BufferGeometryUtils.mergeGeometries(geometries, false);
+          for (const geom of geometries) {
+            geom.dispose();
+          }
+          if (!mergedGeometry) continue;
+          const material = this.getTubeMaterial(color);
+          const mesh = new THREE.Mesh(mergedGeometry, material);
+          mesh.userData["color"] = color;
+          mesh.userData["isExtrusion"] = true;
+          layerGroup.add(mesh);
+        }
+      } else {
+        for (const segment of layerData.segments) {
+          if (segment.vertices.length > 0) {
+            const lineGeometry = new LineGeometry();
+            lineGeometry.setPositions(segment.vertices);
+            const color = this.getPathColor(segment.pathType, index, totalLayers);
+            const lineMaterial = this.getLineMaterial(color);
+            const line = new Line2(lineGeometry, lineMaterial);
+            line.computeLineDistances();
+            line.name = `extruded_${segment.pathType}`;
+            line.userData["pathType"] = segment.pathType;
+            layerGroup.add(line);
+          }
         }
       }
       if (layerData.pathVertex.length > 0) {
@@ -703,19 +949,78 @@ var GCodeViewer = class {
           if (child instanceof Line2 && child.userData["pathType"] && child.userData["pathType"] !== "travel") {
             child.material.color = color;
           }
-        });
-      });
-    } else {
-      this.layers.forEach((layer) => {
-        layer.object.traverse((child) => {
-          if (child instanceof Line2 && child.userData["pathType"]) {
-            const pathType = child.userData["pathType"];
-            const color = new THREE.Color(PATH_TYPE_COLORS[pathType] || "#888888");
+          if (child instanceof THREE.Mesh && child.userData["isExtrusion"]) {
             child.material.color = color;
           }
         });
       });
+    } else {
+      this.layers.forEach((layer, index) => {
+        layer.object.traverse((child) => {
+          if (child instanceof Line2 && child.userData["pathType"]) {
+            const pathType = child.userData["pathType"];
+            const colorStr = this.getPathColor(pathType, index, totalLayers);
+            const color = new THREE.Color(colorStr);
+            child.material.color = color;
+          }
+          if (child instanceof THREE.Mesh && child.userData["isExtrusion"]) {
+            const colorStr = child.userData["color"];
+            if (colorStr) {
+              const color = new THREE.Color(colorStr);
+              child.material.color = color;
+            }
+          }
+        });
+      });
     }
+    this.options.colorScheme = scheme;
+  }
+  /**
+   * Set custom colors for path types (color theme)
+   */
+  setCustomColors(customColors) {
+    this.options.customColors = customColors;
+    this.lineMaterials.clear();
+    this.tubeMaterials.clear();
+  }
+  /**
+   * Get color for a path type based on current settings
+   */
+  getPathColor(pathType, _layerIndex, _totalLayers) {
+    if (this.options.customColors && this.options.customColors[pathType]) {
+      return this.options.customColors[pathType];
+    }
+    return PATH_TYPE_COLORS[pathType] || "#888888";
+  }
+  /**
+   * Get or create a line material for a color
+   */
+  getLineMaterial(color) {
+    if (!this.lineMaterials.has(color)) {
+      const material = new LineMaterial({
+        color: new THREE.Color(color).getHex(),
+        linewidth: this.options.lineWidth,
+        worldUnits: false,
+        dashed: false,
+        alphaToCoverage: false
+      });
+      material.resolution.set(window.innerWidth, window.innerHeight);
+      this.lineMaterials.set(color, material);
+    }
+    return this.lineMaterials.get(color);
+  }
+  /**
+   * Get or create a tube material for a color
+   */
+  getTubeMaterial(color) {
+    if (!this.tubeMaterials.has(color)) {
+      const material = new THREE.MeshLambertMaterial({
+        color: new THREE.Color(color),
+        side: THREE.FrontSide
+      });
+      this.tubeMaterials.set(color, material);
+    }
+    return this.tubeMaterials.get(color);
   }
   /**
    * Update line material resolution (call on window resize)
@@ -728,12 +1033,817 @@ var GCodeViewer = class {
         }
       });
     });
+    for (const material of this.lineMaterials.values()) {
+      material.resolution.set(width, height);
+    }
+  }
+  /**
+   * Dispose all materials and resources
+   */
+  dispose() {
+    for (const material of this.lineMaterials.values()) {
+      material.dispose();
+    }
+    for (const material of this.tubeMaterials.values()) {
+      material.dispose();
+    }
+    this.lineMaterials.clear();
+    this.tubeMaterials.clear();
+    this.reset();
+  }
+};
+
+// src/GCodeParser.ts
+import * as THREE2 from "three";
+var PATH_TYPE_COLORS2 = {
+  "outer_perimeter": "#00d4d4",
+  // Cyan
+  "inner_perimeter": "#00cc66",
+  // Green
+  "infill": "#ff8c00",
+  // Orange
+  "solid_infill": "#ff4444",
+  // Red
+  "top_solid_infill": "#ff69b4",
+  // Pink
+  "bottom_solid_infill": "#9932cc",
+  // Purple
+  "bridge": "#ffd700",
+  // Gold
+  "skirt": "#87ceeb",
+  // Sky Blue
+  "brim": "#87ceeb",
+  // Sky Blue
+  "support": "#a0a0a0",
+  // Gray
+  "support_interface": "#c0c0c0",
+  // Light Gray
+  "prime_tower": "#8b4513",
+  // Brown
+  "wipe_tower": "#8b4513",
+  // Brown
+  "travel": "#ff0000",
+  // Red (usually hidden)
+  "unknown": "#ffffff"
+  // White
+};
+var GCodeParser = class {
+  constructor() {
+    this.layers = [];
+    this.currentLayer = null;
+    this.currentPath = null;
+    this.boundingBox = {
+      min: new THREE2.Vector3(Infinity, Infinity, Infinity),
+      max: new THREE2.Vector3(-Infinity, -Infinity, -Infinity)
+    };
+    // Arc interpolation settings
+    this.arcSegmentsPerMm = 2;
+    // Number of segments per mm of arc
+    // Current detected path type from comments (;TYPE:... etc.)
+    this.detectedPathType = "unknown";
+    this.state = this.createInitialState();
+    this.metadata = this.createInitialMetadata();
+  }
+  createInitialState() {
+    return {
+      x: 0,
+      y: 0,
+      z: 0,
+      e: 0,
+      f: 1e3,
+      tool: 0,
+      units: "mm",
+      absolutePositioning: true,
+      absoluteExtrusion: true
+    };
+  }
+  createInitialMetadata() {
+    return {
+      thumbnails: {},
+      estimatedTime: null,
+      filamentLength: null,
+      filamentLengths: [],
+      layerHeight: null
+    };
+  }
+  /**
+   * Parse G-code text and return layers and metadata
+   */
+  parse(gcodeText) {
+    this.reset();
+    const lines = gcodeText.split("\n");
+    this.parseMetadata(lines);
+    for (const line of lines) {
+      this.parseLine(line);
+    }
+    if (this.currentLayer && this.currentLayer.paths.length > 0) {
+      this.layers.push(this.currentLayer);
+    }
+    return {
+      layers: this.layers,
+      metadata: this.metadata,
+      boundingBox: this.boundingBox
+    };
+  }
+  reset() {
+    this.state = this.createInitialState();
+    this.metadata = this.createInitialMetadata();
+    this.layers = [];
+    this.currentLayer = null;
+    this.currentPath = null;
+    this.detectedPathType = "unknown";
+    this.boundingBox = {
+      min: new THREE2.Vector3(Infinity, Infinity, Infinity),
+      max: new THREE2.Vector3(-Infinity, -Infinity, -Infinity)
+    };
+  }
+  // ============================================================================
+  // Metadata & Thumbnail Parsing
+  // ============================================================================
+  parseMetadata(lines) {
+    let currentThumbnail = null;
+    for (const line of lines) {
+      const trimmed = line.trim();
+      if (!trimmed.startsWith(";")) continue;
+      const comment = trimmed.substring(1).trim();
+      const thumbBeginMatch = comment.match(/thumbnail begin (\d+)x(\d+) (\d+)/);
+      if (thumbBeginMatch) {
+        const [, width, height, charLength] = thumbBeginMatch;
+        currentThumbnail = {
+          size: `${width}x${height}`,
+          width: parseInt(width, 10),
+          height: parseInt(height, 10),
+          charLength: parseInt(charLength, 10),
+          chars: "",
+          src: "",
+          isValid: false
+        };
+        continue;
+      }
+      if (comment.includes("thumbnail end") && currentThumbnail) {
+        const base64regex = /^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/;
+        currentThumbnail.isValid = currentThumbnail.chars.length === currentThumbnail.charLength && base64regex.test(currentThumbnail.chars);
+        if (currentThumbnail.isValid) {
+          currentThumbnail.src = `data:image/png;base64,${currentThumbnail.chars}`;
+          this.metadata.thumbnails[currentThumbnail.size] = currentThumbnail;
+        }
+        currentThumbnail = null;
+        continue;
+      }
+      if (currentThumbnail) {
+        currentThumbnail.chars += comment.trim();
+        continue;
+      }
+      this.parseMetadataLine(comment);
+    }
+  }
+  parseMetadataLine(comment) {
+    const lowerComment = comment.toLowerCase();
+    const timePatterns = [
+      /estimated printing time[^=]*=\s*(\d+)h\s*(\d+)m\s*(\d+)s/i,
+      /TIME:(\d+)/i,
+      /print time[^:]*:\s*(\d+)h?\s*(\d*)m?\s*(\d*)s?/i
+    ];
+    for (const pattern of timePatterns) {
+      const match = comment.match(pattern);
+      if (match) {
+        if (match.length === 4) {
+          this.metadata.estimatedTime = parseInt(match[1]) * 3600 + parseInt(match[2]) * 60 + parseInt(match[3]);
+        } else if (match.length === 2) {
+          this.metadata.estimatedTime = parseInt(match[1]);
+        }
+        break;
+      }
+    }
+    const filamentMatch = comment.match(/filament used[^=]*=\s*([\d.]+)\s*m/i);
+    if (filamentMatch) {
+      this.metadata.filamentLength = parseFloat(filamentMatch[1]) * 1e3;
+    }
+    const layerHeightMatch = comment.match(/layer_height\s*=\s*([\d.]+)/i);
+    if (layerHeightMatch) {
+      this.metadata.layerHeight = parseFloat(layerHeightMatch[1]);
+    }
+    if (lowerComment.includes("prusaslicer") || lowerComment.includes("slic3r")) {
+      const versionMatch = comment.match(/(PrusaSlicer|Slic3r)[^\d]*([\d.]+)/i);
+      if (versionMatch) {
+        this.metadata.slicerName = versionMatch[1];
+        this.metadata.slicerVersion = versionMatch[2];
+      }
+    } else if (lowerComment.includes("cura")) {
+      const versionMatch = comment.match(/Cura[^\d]*([\d.]+)/i);
+      if (versionMatch) {
+        this.metadata.slicerName = "Cura";
+        this.metadata.slicerVersion = versionMatch[1];
+      }
+    } else if (lowerComment.includes("orcaslicer")) {
+      const versionMatch = comment.match(/OrcaSlicer[^\d]*([\d.]+)/i);
+      if (versionMatch) {
+        this.metadata.slicerName = "OrcaSlicer";
+        this.metadata.slicerVersion = versionMatch[1];
+      }
+    } else if (lowerComment.includes("bambustudio")) {
+      const versionMatch = comment.match(/BambuStudio[^\d]*([\d.]+)/i);
+      if (versionMatch) {
+        this.metadata.slicerName = "BambuStudio";
+        this.metadata.slicerVersion = versionMatch[1];
+      }
+    }
+  }
+  // ============================================================================
+  // Command Parsing
+  // ============================================================================
+  parseLine(line) {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith(";")) {
+      if (trimmed.startsWith(";")) {
+        const pathType = this.parsePathTypeFromComment(trimmed.substring(1));
+        if (pathType && pathType !== "travel") {
+          this.detectedPathType = pathType;
+        }
+      }
+      return;
+    }
+    const cmd = this.parseCommand(trimmed);
+    if (!cmd) return;
+    this.executeCommand(cmd);
+  }
+  parseCommand(line) {
+    const parts = line.split(";");
+    const cmdPart = parts[0].trim();
+    const comment = parts[1]?.trim();
+    if (!cmdPart) return null;
+    const tokens = cmdPart.split(/\s+/);
+    const gcodeMatch = tokens[0].match(/([A-Za-z])(\d+\.?\d*)/);
+    if (!gcodeMatch) return null;
+    const gcode = `${gcodeMatch[1].toLowerCase()}${parseFloat(gcodeMatch[2])}`;
+    const params = {};
+    for (let i = 1; i < tokens.length; i++) {
+      const paramMatch = tokens[i].match(/([A-Za-z])([-\d.]+)/);
+      if (paramMatch) {
+        params[paramMatch[1].toLowerCase()] = parseFloat(paramMatch[2]);
+      }
+    }
+    return { src: line, gcode, params, comment };
+  }
+  executeCommand(cmd) {
+    const { gcode, params, comment } = cmd;
+    if (comment) {
+      const pathType = this.parsePathTypeFromComment(comment);
+      if (pathType && pathType !== "travel") {
+        this.detectedPathType = pathType;
+      }
+    }
+    switch (gcode) {
+      case "g0":
+      case "g1":
+        this.handleLinearMove(params);
+        break;
+      case "g2":
+        this.handleArcMove(params, true);
+        break;
+      case "g3":
+        this.handleArcMove(params, false);
+        break;
+      case "g20":
+        this.state.units = "in";
+        break;
+      case "g21":
+        this.state.units = "mm";
+        break;
+      case "g28":
+        this.handleHoming(params);
+        break;
+      case "g90":
+        this.state.absolutePositioning = true;
+        break;
+      case "g91":
+        this.state.absolutePositioning = false;
+        break;
+      case "g92":
+        this.handleSetPosition(params);
+        break;
+      case "t0":
+      case "t1":
+      case "t2":
+      case "t3":
+      case "t4":
+      case "t5":
+      case "t6":
+      case "t7":
+        this.handleToolChange(parseInt(gcode.substring(1)));
+        break;
+      case "m82":
+        this.state.absoluteExtrusion = true;
+        break;
+      case "m83":
+        this.state.absoluteExtrusion = false;
+        break;
+    }
+  }
+  // ============================================================================
+  // Move Handlers
+  // ============================================================================
+  handleLinearMove(params) {
+    const { state } = this;
+    let x = params.x ?? state.x;
+    let y = params.y ?? state.y;
+    let z = params.z ?? state.z;
+    if (!state.absolutePositioning) {
+      x = state.x + (params.x ?? 0);
+      y = state.y + (params.y ?? 0);
+      z = state.z + (params.z ?? 0);
+    }
+    if (params.f !== void 0) {
+      state.f = params.f;
+    }
+    if (z !== state.z && z > state.z) {
+      this.startNewLayer(z);
+    }
+    const isExtrusion = params.e !== void 0 && params.e > 0;
+    const existingPath = this.currentPath;
+    if (existingPath) {
+      const shouldStartNewPath = existingPath.isExtrusion !== isExtrusion || isExtrusion && this.detectedPathType !== "unknown" && existingPath.pathType !== this.detectedPathType;
+      if (shouldStartNewPath) {
+        const pathType = isExtrusion ? this.detectedPathType : "travel";
+        this.startNewPath(pathType, isExtrusion);
+        if (this.currentPath) {
+          this.currentPath.vertices.push(state.x, state.y, state.z);
+          this.currentPath.vertices.push(x, y, z);
+          if (isExtrusion) {
+            this.updateBoundingBox(x, y, z);
+          }
+        }
+      } else {
+        if (existingPath.vertices.length === 0) {
+          existingPath.vertices.push(state.x, state.y, state.z);
+        }
+        existingPath.vertices.push(x, y, z);
+        if (isExtrusion) {
+          this.updateBoundingBox(x, y, z);
+        }
+      }
+    } else {
+      const pathType = isExtrusion ? this.detectedPathType : "travel";
+      this.startNewPath(pathType, isExtrusion);
+      if (this.currentPath) {
+        this.currentPath.vertices.push(state.x, state.y, state.z);
+        this.currentPath.vertices.push(x, y, z);
+        if (isExtrusion) {
+          this.updateBoundingBox(x, y, z);
+        }
+      }
+    }
+    state.x = x;
+    state.y = y;
+    state.z = z;
+    if (params.e !== void 0) {
+      state.e = state.absoluteExtrusion ? params.e : state.e + params.e;
+    }
+  }
+  /**
+   * Handle G2/G3 arc moves
+   */
+  handleArcMove(params, clockwise) {
+    const { state } = this;
+    let x = params.x ?? state.x;
+    let y = params.y ?? state.y;
+    let z = params.z ?? state.z;
+    let { i, j, r } = params;
+    const isExtrusion = params.e !== void 0 && params.e > 0;
+    if (!this.currentPath || this.currentPath.isExtrusion !== isExtrusion) {
+      const pathType = isExtrusion ? this.currentPath?.pathType || "unknown" : "travel";
+      this.startNewPath(pathType, isExtrusion);
+    }
+    if (r !== void 0) {
+      const deltaX = x - state.x;
+      const deltaY = y - state.y;
+      const minR = Math.sqrt(Math.pow(deltaX / 2, 2) + Math.pow(deltaY / 2, 2));
+      r = Math.max(Math.abs(r), minR);
+      const dSquared = Math.pow(deltaX, 2) + Math.pow(deltaY, 2);
+      const hSquared = Math.pow(r, 2) - dSquared / 4;
+      let hDivD = Math.sqrt(Math.max(0, hSquared / dSquared));
+      if (clockwise && r < 0 || !clockwise && r > 0) {
+        hDivD = -hDivD;
+      }
+      i = deltaX / 2 + deltaY * hDivD;
+      j = deltaY / 2 - deltaX * hDivD;
+    }
+    i = i ?? 0;
+    j = j ?? 0;
+    const wholeCircle = state.x === x && state.y === y;
+    const centerX = state.x + i;
+    const centerY = state.y + j;
+    const arcRadius = Math.sqrt(i * i + j * j);
+    const arcCurrentAngle = Math.atan2(-j, -i);
+    const finalTheta = Math.atan2(y - centerY, x - centerX);
+    let totalArc;
+    if (wholeCircle) {
+      totalArc = 2 * Math.PI;
+    } else {
+      totalArc = clockwise ? arcCurrentAngle - finalTheta : finalTheta - arcCurrentAngle;
+      if (totalArc < 0) {
+        totalArc += 2 * Math.PI;
+      }
+    }
+    let totalSegments = Math.ceil(arcRadius * totalArc * this.arcSegmentsPerMm);
+    if (state.units === "in") {
+      totalSegments *= 25.4;
+    }
+    totalSegments = Math.max(1, Math.min(totalSegments, 360));
+    let arcAngleIncrement = totalArc / totalSegments;
+    if (clockwise) {
+      arcAngleIncrement = -arcAngleIncrement;
+    }
+    const zDist = z - state.z;
+    const zStep = zDist / totalSegments;
+    if (this.currentPath && this.currentPath.vertices.length === 0) {
+      this.currentPath.vertices.push(state.x, state.y, state.z);
+    }
+    let currentAngle = arcCurrentAngle;
+    let pz = state.z;
+    for (let seg = 0; seg < totalSegments - 1; seg++) {
+      currentAngle += arcAngleIncrement;
+      const px = centerX + arcRadius * Math.cos(currentAngle);
+      const py = centerY + arcRadius * Math.sin(currentAngle);
+      pz += zStep;
+      if (this.currentPath) {
+        this.currentPath.vertices.push(px, py, pz);
+      }
+      if (isExtrusion) {
+        this.updateBoundingBox(px, py, pz);
+      }
+    }
+    if (this.currentPath) {
+      this.currentPath.vertices.push(x, y, z);
+    }
+    if (isExtrusion) {
+      this.updateBoundingBox(x, y, z);
+    }
+    state.x = x;
+    state.y = y;
+    state.z = z;
+    if (params.e !== void 0) {
+      state.e = state.absoluteExtrusion ? params.e : state.e + params.e;
+    }
+  }
+  handleHoming(params) {
+    if (params.x !== void 0 || Object.keys(params).length === 0) {
+      this.state.x = 0;
+    }
+    if (params.y !== void 0 || Object.keys(params).length === 0) {
+      this.state.y = 0;
+    }
+    if (params.z !== void 0 || Object.keys(params).length === 0) {
+      this.state.z = 0;
+    }
+  }
+  handleSetPosition(params) {
+    if (params.x !== void 0) this.state.x = params.x;
+    if (params.y !== void 0) this.state.y = params.y;
+    if (params.z !== void 0) this.state.z = params.z;
+    if (params.e !== void 0) this.state.e = params.e;
+  }
+  handleToolChange(tool) {
+    this.state.tool = tool;
+    if (this.currentPath) {
+      this.startNewPath(this.currentPath.pathType, this.currentPath.isExtrusion);
+    }
+  }
+  // ============================================================================
+  // Layer & Path Management
+  // ============================================================================
+  startNewLayer(zHeight) {
+    this.finalizePath();
+    if (this.currentLayer && this.currentLayer.paths.length > 0) {
+      this.layers.push(this.currentLayer);
+    }
+    this.currentLayer = {
+      index: this.layers.length,
+      zHeight,
+      paths: []
+    };
+  }
+  startNewPath(pathType, isExtrusion) {
+    this.finalizePath();
+    this.currentPath = {
+      vertices: [],
+      pathType,
+      tool: this.state.tool,
+      extrusionWidth: 0.4,
+      lineHeight: 0.2,
+      isExtrusion
+    };
+  }
+  finalizePath() {
+    if (this.currentPath && this.currentPath.vertices.length >= 6) {
+      if (!this.currentLayer) {
+        this.currentLayer = {
+          index: 0,
+          zHeight: this.state.z,
+          paths: []
+        };
+      }
+      this.currentLayer.paths.push(this.currentPath);
+    }
+    this.currentPath = null;
+  }
+  // ============================================================================
+  // Utility Methods
+  // ============================================================================
+  parsePathTypeFromComment(comment) {
+    const lowerComment = comment.toLowerCase().trim();
+    if (lowerComment.startsWith("type:")) {
+      const typeStr = lowerComment.substring(5).trim();
+      return this.mapPathType(typeStr);
+    }
+    if (lowerComment.startsWith("feature:")) {
+      const typeStr = lowerComment.substring(8).trim();
+      return this.mapPathType(typeStr);
+    }
+    if (lowerComment.startsWith("feature ")) {
+      const typeStr = lowerComment.substring(8).trim();
+      return this.mapPathType(typeStr);
+    }
+    const featureMatch = lowerComment.match(/;\s*feature:\s*(.+)/i);
+    if (featureMatch) {
+      return this.mapPathType(featureMatch[1].trim());
+    }
+    return null;
+  }
+  mapPathType(typeStr) {
+    const lower = typeStr.toLowerCase().replace(/[_\s-]/g, "");
+    const mappings = {
+      // PrusaSlicer / OrcaSlicer / BambuStudio
+      "externalperimeter": "outer_perimeter",
+      "outerwall": "outer_perimeter",
+      "perimeter": "inner_perimeter",
+      "innerwall": "inner_perimeter",
+      "internalinfill": "infill",
+      "sparseinfill": "infill",
+      "solidinfill": "solid_infill",
+      "topsolidinfill": "top_solid_infill",
+      "topsurface": "top_solid_infill",
+      "bottomsolidinfill": "bottom_solid_infill",
+      "bottomsurface": "bottom_solid_infill",
+      "bridgeinfill": "bridge",
+      "bridge": "bridge",
+      "overhangperimeter": "bridge",
+      "skirt": "skirt",
+      "skirtbrim": "skirt",
+      "brim": "brim",
+      "supportmaterial": "support",
+      "support": "support",
+      "supportmaterialinterface": "support_interface",
+      "supportinterface": "support_interface",
+      "primetower": "prime_tower",
+      "wipetower": "wipe_tower",
+      // Cura
+      "wallouter": "outer_perimeter",
+      "wallinner": "inner_perimeter",
+      "skin": "top_solid_infill",
+      "topskin": "top_solid_infill",
+      "bottomskin": "bottom_solid_infill",
+      "fill": "infill",
+      "infill": "infill",
+      "supportroof": "support_interface",
+      "supportfloor": "support_interface",
+      // Simplify3D
+      "outermostperimeter": "outer_perimeter",
+      "innerperimeter": "inner_perimeter",
+      "densesupport": "support_interface",
+      "oozeshield": "skirt",
+      "raft": "support",
+      // Generic
+      "travel": "travel",
+      "move": "travel",
+      "retract": "travel"
+    };
+    return mappings[lower] || "unknown";
+  }
+  updateBoundingBox(x, y, z) {
+    this.boundingBox.min.x = Math.min(this.boundingBox.min.x, x);
+    this.boundingBox.min.y = Math.min(this.boundingBox.min.y, y);
+    this.boundingBox.min.z = Math.min(this.boundingBox.min.z, z);
+    this.boundingBox.max.x = Math.max(this.boundingBox.max.x, x);
+    this.boundingBox.max.y = Math.max(this.boundingBox.max.y, y);
+    this.boundingBox.max.z = Math.max(this.boundingBox.max.z, z);
+  }
+};
+
+// src/GCodeRenderer.ts
+import * as THREE3 from "three";
+import { Line2 as Line22 } from "three/examples/jsm/lines/Line2.js";
+import { LineMaterial as LineMaterial2 } from "three/examples/jsm/lines/LineMaterial.js";
+import { LineGeometry as LineGeometry2 } from "three/examples/jsm/lines/LineGeometry.js";
+import * as BufferGeometryUtils2 from "three/examples/jsm/utils/BufferGeometryUtils.js";
+var GCodeRenderer = class {
+  constructor(options = {}) {
+    this.lineMaterials = /* @__PURE__ */ new Map();
+    this.tubeMaterials = /* @__PURE__ */ new Map();
+    this.options = {
+      renderTubes: options.renderTubes ?? false,
+      lineWidth: options.lineWidth ?? 2,
+      extrusionWidth: options.extrusionWidth ?? 0.4,
+      lineHeight: options.lineHeight ?? 0.2,
+      radialSegments: options.radialSegments ?? 4,
+      colorScheme: options.colorScheme ?? "pathType",
+      toolColors: options.toolColors ?? ["#ff6b6b", "#4ecdc4", "#45b7d1", "#96ceb4", "#ffeaa7", "#dfe6e9", "#a29bfe", "#fd79a8"],
+      customColors: options.customColors,
+      showTravel: options.showTravel ?? false,
+      travelColor: options.travelColor ?? "#ff0000",
+      canvasWidth: options.canvasWidth ?? 1920,
+      canvasHeight: options.canvasHeight ?? 1080
+    };
+  }
+  /**
+   * Render layers to Three.js objects
+   * Uses single merged mesh per color per layer to eliminate z-fighting
+   */
+  render(layers, boundingBox) {
+    const renderedLayers = [];
+    const totalLayers = layers.length;
+    const center = new THREE3.Vector3();
+    center.addVectors(boundingBox.min, boundingBox.max).multiplyScalar(0.5);
+    for (const layer of layers) {
+      const layerGroup = new THREE3.Group();
+      layerGroup.name = `layer_${layer.index}`;
+      const extrusionLines = [];
+      const travelLines = [];
+      if (this.options.renderTubes) {
+        const geometriesByColor = {};
+        for (const path of layer.paths) {
+          if (path.vertices.length < 6) continue;
+          if (path.pathType === "travel" && !this.options.showTravel) continue;
+          if (!path.isExtrusion) continue;
+          const color = this.getPathColor(path, layer.index, totalLayers);
+          const points = [];
+          for (let i = 0; i < path.vertices.length; i += 3) {
+            points.push(new THREE3.Vector3(
+              path.vertices[i] - center.x,
+              path.vertices[i + 1] - center.y,
+              path.vertices[i + 2] - center.z
+            ));
+          }
+          if (points.length < 2) continue;
+          const geometry = new ExtrusionGeometry(
+            points,
+            path.extrusionWidth || this.options.extrusionWidth,
+            path.lineHeight || this.options.lineHeight,
+            this.options.radialSegments
+          );
+          if (geometry.attributes["position"]?.count > 0) {
+            if (!geometriesByColor[color]) {
+              geometriesByColor[color] = [];
+            }
+            geometriesByColor[color].push(geometry);
+          }
+        }
+        for (const color in geometriesByColor) {
+          const geometries = geometriesByColor[color];
+          if (geometries.length === 0) continue;
+          const mergedGeometry = BufferGeometryUtils2.mergeGeometries(geometries, false);
+          for (const geom of geometries) {
+            geom.dispose();
+          }
+          if (!mergedGeometry) continue;
+          const material = this.getTubeMaterial(color);
+          const mesh = new THREE3.Mesh(mergedGeometry, material);
+          mesh.userData["color"] = color;
+          mesh.userData["isExtrusion"] = true;
+          layerGroup.add(mesh);
+          extrusionLines.push(mesh);
+        }
+      } else {
+        for (const path of layer.paths) {
+          if (path.vertices.length < 6) continue;
+          if (path.pathType === "travel" && !this.options.showTravel) continue;
+          const color = this.getPathColor(path, layer.index, totalLayers);
+          const object = this.createLine(path, color, center);
+          object.userData["pathType"] = path.pathType;
+          object.userData["tool"] = path.tool;
+          object.userData["isExtrusion"] = path.isExtrusion;
+          layerGroup.add(object);
+          if (path.isExtrusion) {
+            extrusionLines.push(object);
+          } else {
+            travelLines.push(object);
+          }
+        }
+      }
+      renderedLayers.push({
+        index: layer.index,
+        zHeight: layer.zHeight,
+        object: layerGroup,
+        visible: true,
+        extrusionLines,
+        travelLines
+      });
+    }
+    return renderedLayers;
+  }
+  /**
+   * Create a Line2 object for a path
+   */
+  createLine(path, color, center) {
+    const positions = [];
+    for (let i = 0; i < path.vertices.length; i += 3) {
+      positions.push(
+        path.vertices[i] - center.x,
+        path.vertices[i + 1] - center.y,
+        path.vertices[i + 2] - center.z
+      );
+    }
+    const geometry = new LineGeometry2();
+    geometry.setPositions(positions);
+    const material = this.getLineMaterial(color);
+    return new Line22(geometry, material);
+  }
+  /**
+   * Get or create a line material for a color
+   */
+  getLineMaterial(color) {
+    if (!this.lineMaterials.has(color)) {
+      const material = new LineMaterial2({
+        color: new THREE3.Color(color).getHex(),
+        linewidth: this.options.lineWidth,
+        resolution: new THREE3.Vector2(this.options.canvasWidth, this.options.canvasHeight)
+      });
+      this.lineMaterials.set(color, material);
+    }
+    return this.lineMaterials.get(color);
+  }
+  /**
+   * Get or create a tube material for a color
+   */
+  getTubeMaterial(color) {
+    if (!this.tubeMaterials.has(color)) {
+      const material = new THREE3.MeshLambertMaterial({
+        color: new THREE3.Color(color),
+        side: THREE3.FrontSide
+      });
+      this.tubeMaterials.set(color, material);
+    }
+    return this.tubeMaterials.get(color);
+  }
+  /**
+   * Determine color for a path based on color scheme
+   */
+  getPathColor(path, layerIndex, totalLayers) {
+    switch (this.options.colorScheme) {
+      case "tool":
+        return this.options.toolColors[path.tool % this.options.toolColors.length];
+      case "height":
+        const hue = layerIndex / Math.max(totalLayers - 1, 1) * 0.7;
+        return `hsl(${hue * 360}, 80%, 50%)`;
+      case "pathType":
+      default:
+        if (this.options.customColors && this.options.customColors[path.pathType]) {
+          return this.options.customColors[path.pathType];
+        }
+        return PATH_TYPE_COLORS2[path.pathType] || PATH_TYPE_COLORS2.unknown;
+    }
+  }
+  /**
+   * Update line material resolution (call on window resize)
+   */
+  updateResolution(width, height) {
+    this.options.canvasWidth = width;
+    this.options.canvasHeight = height;
+    for (const material of this.lineMaterials.values()) {
+      material.resolution.set(width, height);
+    }
+  }
+  /**
+   * Update line width
+   */
+  setLineWidth(width) {
+    this.options.lineWidth = width;
+    for (const material of this.lineMaterials.values()) {
+      material.linewidth = width;
+    }
+  }
+  /**
+   * Dispose all materials
+   */
+  dispose() {
+    for (const material of this.lineMaterials.values()) {
+      material.dispose();
+    }
+    for (const material of this.tubeMaterials.values()) {
+      material.dispose();
+    }
+    this.lineMaterials.clear();
+    this.tubeMaterials.clear();
   }
 };
 export {
   BRANDING_CSS,
+  COLOR_THEMES,
+  ExtrusionGeometry,
+  GCodeParser,
+  GCodeRenderer,
   GCodeViewer,
-  PATH_TYPE_COLORS,
+  PATH_TYPE_COLORS2 as PATH_TYPE_COLORS,
   WHITELISTED_DOMAINS,
   createBrandingElement,
   getBranding,

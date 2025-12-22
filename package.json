@@ -1,7 +1,7 @@
 {
   "name": "@polar3d/gcode-viewer",
-  "version": "1.0.10",
-  "description": "A Three.js-based G-code viewer with layer-by-layer visualization, path type coloring, and print info extraction",
+  "version": "2.1.0",
+  "description": "A Three.js-based G-code viewer with layer-by-layer visualization, 3D tube rendering, G2/G3 arc support, color themes, thumbnails, and print info extraction",
   "main": "dist/index.js",
   "module": "dist/index.mjs",
   "types": "dist/index.d.ts",
@@ -15,7 +15,8 @@
   "files": [
     "dist",
     "README.md",
-    "LICENSE"
+    "LICENSE",
+    "CHANGELOG.md"
   ],
   "scripts": {
     "build": "tsup",
@@ -34,7 +35,9 @@
     "visualization",
     "polar3d",
     "polar cloud",
-    "3d model"
+    "3d model",
+    "tube rendering",
+    "toolpath"
   ],
   "author": "SlimElephant",
   "license": "SEE LICENSE IN LICENSE",

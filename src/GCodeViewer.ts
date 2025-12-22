@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { Line2 } from 'three/examples/jsm/lines/Line2.js';
 import { LineMaterial } from 'three/examples/jsm/lines/LineMaterial.js';
 import { LineGeometry } from 'three/examples/jsm/lines/LineGeometry.js';
+import * as BufferGeometryUtils from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import {
   PathType,
   PATH_TYPE_COLORS,
@@ -10,9 +11,11 @@ import {
   GCodePrintInfo,
   LayerData,
   ParseResult,
+  CustomColors,
 } from './types';
 import { parsePathType, parsePrintInfoFromLine } from './parser';
 import { injectBranding } from './branding';
+import { ExtrusionGeometry } from './ExtrusionGeometry';
 
 interface PathSegment {
   vertices: number[];
@@ -52,6 +55,8 @@ export class GCodeViewer {
   private options: ResolvedGCodeViewerOptions;
   private printInfo: GCodePrintInfo | null = null;
   private brandingInjected: boolean = false;
+  private lineMaterials: Map<string, LineMaterial> = new Map();
+  private tubeMaterials: Map<string, THREE.MeshLambertMaterial> = new Map();
 
   constructor(options: GCodeViewerOptions = {}) {
     this.options = {
@@ -60,6 +65,11 @@ export class GCodeViewer {
       colorScheme: options.colorScheme ?? 'pathType',
       showTravelMoves: options.showTravelMoves ?? false,
       container: options.container,
+      renderTubes: options.renderTubes ?? false,
+      extrusionWidth: options.extrusionWidth ?? 0.4,
+      lineHeight: options.lineHeight ?? 0.2,
+      radialSegments: options.radialSegments ?? 4,
+      customColors: options.customColors,
     };
   }
 
@@ -410,32 +420,86 @@ export class GCodeViewer {
       const layerGroup = new THREE.Group();
       layerGroup.name = `layer_${index}_z${z.toFixed(3)}`;
 
-      // Create line for each path type segment
-      for (const segment of layerData.segments) {
-        if (segment.vertices.length > 0) {
-          const lineGeometry = new LineGeometry();
-          lineGeometry.setPositions(segment.vertices);
+      if (this.options.renderTubes) {
+        // Tube rendering - create continuous tube meshes
+        // Group geometries by color to create merged meshes
+        const geometriesByColor: Map<string, ExtrusionGeometry[]> = new Map();
 
-          const color = new THREE.Color(PATH_TYPE_COLORS[segment.pathType] || '#888888');
+        for (const segment of layerData.segments) {
+          if (segment.vertices.length < 6) continue;
 
-          const lineMaterial = new LineMaterial({
-            color: color.getHex(),
-            linewidth: this.options.lineWidth,
-            worldUnits: false,
-            dashed: false,
-            alphaToCoverage: false,
-          });
-          lineMaterial.resolution.set(window.innerWidth, window.innerHeight);
+          // Get color for this path type
+          const color = this.getPathColor(segment.pathType, index, totalLayers);
 
-          const line = new Line2(lineGeometry, lineMaterial);
-          line.computeLineDistances();
-          line.name = `extruded_${segment.pathType}`;
-          line.userData['pathType'] = segment.pathType;
-          layerGroup.add(line);
+          // Convert vertices to Vector3 array
+          const points: THREE.Vector3[] = [];
+          for (let i = 0; i < segment.vertices.length; i += 3) {
+            points.push(new THREE.Vector3(
+              segment.vertices[i],
+              segment.vertices[i + 1],
+              segment.vertices[i + 2]
+            ));
+          }
+
+          if (points.length < 2) continue;
+
+          const geometry = new ExtrusionGeometry(
+            points,
+            this.options.extrusionWidth,
+            this.options.lineHeight,
+            this.options.radialSegments
+          );
+
+          if (geometry.attributes['position']?.count > 0) {
+            if (!geometriesByColor.has(color)) {
+              geometriesByColor.set(color, []);
+            }
+            geometriesByColor.get(color)!.push(geometry);
+          }
+        }
+
+        // Create one merged mesh per color for this layer
+        for (const [color, geometries] of geometriesByColor) {
+          if (geometries.length === 0) continue;
+
+          // Merge all geometries of the same color into one
+          const mergedGeometry = BufferGeometryUtils.mergeGeometries(geometries, false);
+
+          // Dispose individual geometries
+          for (const geom of geometries) {
+            geom.dispose();
+          }
+
+          if (!mergedGeometry) continue;
+
+          const material = this.getTubeMaterial(color);
+          const mesh = new THREE.Mesh(mergedGeometry, material);
+          mesh.userData['color'] = color;
+          mesh.userData['isExtrusion'] = true;
+
+          layerGroup.add(mesh);
+        }
+      } else {
+        // Line rendering (original behavior)
+        for (const segment of layerData.segments) {
+          if (segment.vertices.length > 0) {
+            const lineGeometry = new LineGeometry();
+            lineGeometry.setPositions(segment.vertices);
+
+            const color = this.getPathColor(segment.pathType, index, totalLayers);
+
+            const lineMaterial = this.getLineMaterial(color);
+
+            const line = new Line2(lineGeometry, lineMaterial);
+            line.computeLineDistances();
+            line.name = `extruded_${segment.pathType}`;
+            line.userData['pathType'] = segment.pathType;
+            layerGroup.add(line);
+          }
         }
       }
 
-      // Create travel path geometry
+      // Create travel path geometry (always as lines)
       if (layerData.pathVertex.length > 0) {
         const pathGeometry = new LineGeometry();
         pathGeometry.setPositions(layerData.pathVertex);
@@ -654,20 +718,89 @@ export class GCodeViewer {
           ) {
             (child.material as LineMaterial).color = color;
           }
+          // Handle tube meshes
+          if (child instanceof THREE.Mesh && child.userData['isExtrusion']) {
+            (child.material as THREE.MeshLambertMaterial).color = color;
+          }
         });
       });
     } else {
       // Color by path type
-      this.layers.forEach((layer) => {
+      this.layers.forEach((layer, index) => {
         layer.object.traverse((child) => {
           if (child instanceof Line2 && child.userData['pathType']) {
             const pathType = child.userData['pathType'] as PathType;
-            const color = new THREE.Color(PATH_TYPE_COLORS[pathType] || '#888888');
+            const colorStr = this.getPathColor(pathType, index, totalLayers);
+            const color = new THREE.Color(colorStr);
             (child.material as LineMaterial).color = color;
+          }
+          // Handle tube meshes - update material color
+          if (child instanceof THREE.Mesh && child.userData['isExtrusion']) {
+            // For tubes, we need to update the material color
+            const colorStr = child.userData['color'] as string;
+            if (colorStr) {
+              const color = new THREE.Color(colorStr);
+              (child.material as THREE.MeshLambertMaterial).color = color;
+            }
           }
         });
       });
     }
+
+    this.options.colorScheme = scheme;
+  }
+
+  /**
+   * Set custom colors for path types (color theme)
+   */
+  setCustomColors(customColors: CustomColors | undefined): void {
+    this.options.customColors = customColors;
+    // Clear material cache to force re-creation with new colors
+    this.lineMaterials.clear();
+    this.tubeMaterials.clear();
+  }
+
+  /**
+   * Get color for a path type based on current settings
+   */
+  private getPathColor(pathType: PathType, _layerIndex: number, _totalLayers: number): string {
+    // Use custom colors if provided
+    if (this.options.customColors && this.options.customColors[pathType]) {
+      return this.options.customColors[pathType]!;
+    }
+    return PATH_TYPE_COLORS[pathType] || '#888888';
+  }
+
+  /**
+   * Get or create a line material for a color
+   */
+  private getLineMaterial(color: string): LineMaterial {
+    if (!this.lineMaterials.has(color)) {
+      const material = new LineMaterial({
+        color: new THREE.Color(color).getHex(),
+        linewidth: this.options.lineWidth,
+        worldUnits: false,
+        dashed: false,
+        alphaToCoverage: false,
+      });
+      material.resolution.set(window.innerWidth, window.innerHeight);
+      this.lineMaterials.set(color, material);
+    }
+    return this.lineMaterials.get(color)!;
+  }
+
+  /**
+   * Get or create a tube material for a color
+   */
+  private getTubeMaterial(color: string): THREE.MeshLambertMaterial {
+    if (!this.tubeMaterials.has(color)) {
+      const material = new THREE.MeshLambertMaterial({
+        color: new THREE.Color(color),
+        side: THREE.FrontSide,
+      });
+      this.tubeMaterials.set(color, material);
+    }
+    return this.tubeMaterials.get(color)!;
   }
 
   /**
@@ -681,5 +814,25 @@ export class GCodeViewer {
         }
       });
     });
+
+    // Update cached materials
+    for (const material of this.lineMaterials.values()) {
+      material.resolution.set(width, height);
+    }
+  }
+
+  /**
+   * Dispose all materials and resources
+   */
+  dispose(): void {
+    for (const material of this.lineMaterials.values()) {
+      material.dispose();
+    }
+    for (const material of this.tubeMaterials.values()) {
+      material.dispose();
+    }
+    this.lineMaterials.clear();
+    this.tubeMaterials.clear();
+    this.reset();
   }
 }
