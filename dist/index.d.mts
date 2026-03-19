@@ -288,6 +288,7 @@ declare class GCodeParser {
     parse(gcodeText: string): ParseResult;
     private reset;
     private parseMetadata;
+    private parseDurationMatch;
     private parseMetadataLine;
     private parseLine;
     private parseCommand;

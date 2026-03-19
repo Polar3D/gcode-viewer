@@ -88,6 +88,19 @@ export function parsePathType(comment: string): PathType | null {
 }
 
 /**
+ * Parse duration from a regex match with optional d/h/m/s capture groups
+ */
+function parseDurationMatch(match: RegExpMatchArray | null): number | null {
+  if (!match) return null;
+  const days = parseInt(match[1] || '0', 10);
+  const hours = parseInt(match[2] || '0', 10);
+  const minutes = parseInt(match[3] || '0', 10);
+  const seconds = parseInt(match[4] || '0', 10);
+  const total = days * 86400 + hours * 3600 + minutes * 60 + seconds;
+  return total > 0 ? total : null;
+}
+
+/**
  * Parse print info from G-code header comments
  */
 export function parsePrintInfoFromLine(
@@ -107,18 +120,32 @@ export function parsePrintInfoFromLine(
 
   // Time estimates (various slicer formats)
   if (lowerLine.includes('time') || lowerLine.includes('estimated')) {
-    // Format: ; estimated printing time = 1h 23m 45s
-    const timeMatch = line.match(/(\d+)\s*h\s*(\d+)\s*m(?:\s*(\d+)\s*s)?/i);
-    if (timeMatch) {
-      estimatedTime =
-        parseInt(timeMatch[1]) * 3600 +
-        parseInt(timeMatch[2]) * 60 +
-        (parseInt(timeMatch[3]) || 0);
+    // Bambu Studio / OrcaSlicer: "estimated printing time (normal mode) = 6h 54m 12s" or "= 54m 12s" or "= 6h 54m"
+    // Bambu Studio (Bambu printers): "model printing time: 4h 10m 49s" or "total estimated time: 6h 55m 0s"
+    // PrusaSlicer: "estimated printing time = 6h 54m 12s"
+    const hmsMatch = line.match(
+      /(?:estimated printing time|model printing time|total estimated time)[^=:]*[=:]\s*(?:(\d+)d\s*)?(?:(\d+)h\s*)?(?:(\d+)m\s*)?(?:(\d+)s)?/i
+    );
+    const hmsTotal = parseDurationMatch(hmsMatch);
+    if (hmsTotal !== null) {
+      estimatedTime = hmsTotal;
     }
-    // Format: ;TIME:1234 (seconds)
-    const timeSecsMatch = line.match(/;TIME[:\s]*(\d+)/i);
-    if (timeSecsMatch) {
-      estimatedTime = parseInt(timeSecsMatch[1]);
+    // Generic "print time" format (fallback for other slicers)
+    if (estimatedTime === null) {
+      const printTimeMatch = line.match(
+        /print time[^:]*:\s*(?:(\d+)d\s*)?(?:(\d+)h\s*)?(?:(\d+)m\s*)?(?:(\d+)s)?/i
+      );
+      const printTimeTotal = parseDurationMatch(printTimeMatch);
+      if (printTimeTotal !== null) {
+        estimatedTime = printTimeTotal;
+      }
+    }
+    // Format: ;TIME:1234 (seconds) - Cura
+    if (estimatedTime === null) {
+      const timeSecsMatch = line.match(/;TIME[:\s]*(\d+)/i);
+      if (timeSecsMatch) {
+        estimatedTime = parseInt(timeSecsMatch[1], 10);
+      }
     }
   }
 
