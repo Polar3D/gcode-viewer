@@ -263,25 +263,49 @@ export class GCodeParser {
         }
     }
 
+    private parseDurationMatch(match: RegExpMatchArray | null): number | null {
+        if (!match) {
+            return null;
+        }
+        const days = parseInt(match[1] || '0', 10);
+        const hours = parseInt(match[2] || '0', 10);
+        const minutes = parseInt(match[3] || '0', 10);
+        const seconds = parseInt(match[4] || '0', 10);
+        const total = days * 86400 + hours * 3600 + minutes * 60 + seconds;
+        return total > 0 ? total : null;
+    }
+
     private parseMetadataLine(comment: string): void {
         const lowerComment = comment.toLowerCase();
 
         // Estimated time (multiple formats)
-        const timePatterns = [
-            /estimated printing time[^=]*=\s*(\d+)h\s*(\d+)m\s*(\d+)s/i,
-            /TIME:(\d+)/i,
-            /print time[^:]*:\s*(\d+)h?\s*(\d*)m?\s*(\d*)s?/i
-        ];
+        // Bambu Studio / OrcaSlicer: "estimated printing time (normal mode) = 6h 54m 12s" or "= 54m 12s" or "= 6h 54m"
+        // Bambu Studio (Bambu printers): "model printing time: 4h 10m 49s" or "total estimated time: 6h 55m 0s"
+        // Cura: "TIME:24852"
+        // PrusaSlicer: "estimated printing time = 6h 54m 12s"
+        if (!this.metadata.estimatedTime) {
+            // Pattern for h/m/s with optional components (handles Bambu, Prusa, OrcaSlicer)
+            const hmsMatch = comment.match(/(?:estimated printing time|model printing time|total estimated time)[^=:]*[=:]\s*(?:(\d+)d\s*)?(?:(\d+)h\s*)?(?:(\d+)m\s*)?(?:(\d+)s)?/i);
+            const hmsTotal = this.parseDurationMatch(hmsMatch);
+            if (hmsTotal !== null) {
+                this.metadata.estimatedTime = hmsTotal;
+            }
 
-        for (const pattern of timePatterns) {
-            const match = comment.match(pattern);
-            if (match) {
-                if (match.length === 4) {
-                    this.metadata.estimatedTime = parseInt(match[1]) * 3600 + parseInt(match[2]) * 60 + parseInt(match[3]);
-                } else if (match.length === 2) {
-                    this.metadata.estimatedTime = parseInt(match[1]);
+            // Cura format: "TIME:24852" (raw seconds)
+            if (!this.metadata.estimatedTime) {
+                const timeMatch = comment.match(/TIME:(\d+)/i);
+                if (timeMatch) {
+                    this.metadata.estimatedTime = parseInt(timeMatch[1]);
                 }
-                break;
+            }
+
+            // Generic "print time" format
+            if (!this.metadata.estimatedTime) {
+                const printTimeMatch = comment.match(/print time[^:]*:\s*(?:(\d+)d\s*)?(?:(\d+)h\s*)?(?:(\d+)m\s*)?(?:(\d+)s)?/i);
+                const printTimeTotal = this.parseDurationMatch(printTimeMatch);
+                if (printTimeTotal !== null) {
+                    this.metadata.estimatedTime = printTimeTotal;
+                }
             }
         }
 
@@ -516,8 +540,12 @@ export class GCodeParser {
 
         const isExtrusion = params.e !== undefined && params.e > 0;
 
-        if (!this.currentPath || this.currentPath.isExtrusion !== isExtrusion) {
-            const pathType = isExtrusion ? (this.currentPath?.pathType || 'unknown') : 'travel';
+        const shouldStartNewPath = !this.currentPath ||
+            this.currentPath.isExtrusion !== isExtrusion ||
+            (isExtrusion && this.detectedPathType !== 'unknown' && this.currentPath.pathType !== this.detectedPathType);
+
+        if (shouldStartNewPath) {
+            const pathType = isExtrusion ? this.detectedPathType : 'travel';
             this.startNewPath(pathType, isExtrusion);
         }
 
