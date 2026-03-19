@@ -263,6 +263,18 @@ export class GCodeParser {
         }
     }
 
+    private parseDurationMatch(match: RegExpMatchArray | null): number | null {
+        if (!match) {
+            return null;
+        }
+        const days = parseInt(match[1] || '0', 10);
+        const hours = parseInt(match[2] || '0', 10);
+        const minutes = parseInt(match[3] || '0', 10);
+        const seconds = parseInt(match[4] || '0', 10);
+        const total = days * 86400 + hours * 3600 + minutes * 60 + seconds;
+        return total > 0 ? total : null;
+    }
+
     private parseMetadataLine(comment: string): void {
         const lowerComment = comment.toLowerCase();
 
@@ -274,15 +286,9 @@ export class GCodeParser {
         if (!this.metadata.estimatedTime) {
             // Pattern for h/m/s with optional components (handles Bambu, Prusa, OrcaSlicer)
             const hmsMatch = comment.match(/(?:estimated printing time|model printing time|total estimated time)[^=:]*[=:]\s*(?:(\d+)d\s*)?(?:(\d+)h\s*)?(?:(\d+)m\s*)?(?:(\d+)s)?/i);
-            if (hmsMatch) {
-                const days = parseInt(hmsMatch[1] || '0');
-                const hours = parseInt(hmsMatch[2] || '0');
-                const minutes = parseInt(hmsMatch[3] || '0');
-                const seconds = parseInt(hmsMatch[4] || '0');
-                const total = days * 86400 + hours * 3600 + minutes * 60 + seconds;
-                if (total > 0) {
-                    this.metadata.estimatedTime = total;
-                }
+            const hmsTotal = this.parseDurationMatch(hmsMatch);
+            if (hmsTotal !== null) {
+                this.metadata.estimatedTime = hmsTotal;
             }
 
             // Cura format: "TIME:24852" (raw seconds)
@@ -296,15 +302,9 @@ export class GCodeParser {
             // Generic "print time" format
             if (!this.metadata.estimatedTime) {
                 const printTimeMatch = comment.match(/print time[^:]*:\s*(?:(\d+)d\s*)?(?:(\d+)h\s*)?(?:(\d+)m\s*)?(?:(\d+)s)?/i);
-                if (printTimeMatch) {
-                    const days = parseInt(printTimeMatch[1] || '0');
-                    const hours = parseInt(printTimeMatch[2] || '0');
-                    const minutes = parseInt(printTimeMatch[3] || '0');
-                    const seconds = parseInt(printTimeMatch[4] || '0');
-                    const total = days * 86400 + hours * 3600 + minutes * 60 + seconds;
-                    if (total > 0) {
-                        this.metadata.estimatedTime = total;
-                    }
+                const printTimeTotal = this.parseDurationMatch(printTimeMatch);
+                if (printTimeTotal !== null) {
+                    this.metadata.estimatedTime = printTimeTotal;
                 }
             }
         }
