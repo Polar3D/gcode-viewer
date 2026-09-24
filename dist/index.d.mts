@@ -288,6 +288,7 @@ declare class GCodeParser {
     parse(gcodeText: string): ParseResult;
     private reset;
     private parseMetadata;
+    private parseDurationMatch;
     private parseMetadataLine;
     private parseLine;
     private parseCommand;
@@ -428,6 +429,29 @@ declare function parsePrintInfoFromLine(line: string, currentInfo: {
 };
 
 /**
+ * Reading G-code out of the container it arrives in.
+ *
+ * FlashForge `.gx` files are not plain text: they open with a binary header
+ * and an embedded BMP thumbnail, and the G-code body starts further in. Decode
+ * such a file with `gcodeTextFromBuffer()` before handing it to the parser.
+ */
+/**
+ * Whether a buffer holds a FlashForge `.gx` ("xgcode") file.
+ */
+declare function isGXBuffer(buffer: ArrayBuffer): boolean;
+/**
+ * Byte offset where the G-code body starts. 0 for a plain G-code file, and for
+ * a `.gx` whose header offset is missing or out of range.
+ */
+declare function gcodeBodyOffset(buffer: ArrayBuffer): number;
+/**
+ * Decode a downloaded G-code file (`.gcode`, `.g` or `.gx`) into text for
+ * `GCodeParser.parse()`. Strips a `.gx` binary header when present; line
+ * numbers are handled by the parser itself.
+ */
+declare function gcodeTextFromBuffer(buffer: ArrayBuffer): string;
+
+/**
  * Branding information for Polar3D G-Code Viewer
  *
  * IMPORTANT: Per the license agreement, this branding MUST be displayed
@@ -465,4 +489,4 @@ declare function injectBranding(container: HTMLElement): HTMLElement | null;
  */
 declare const BRANDING_CSS = "\n.polar3d-branding {\n  position: absolute;\n  bottom: 8px;\n  left: 8px;\n  z-index: 1000;\n  padding: 4px 8px;\n  background: rgba(0, 0, 0, 0.7);\n  border-radius: 4px;\n  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;\n}\n\n.polar3d-branding a {\n  color: #38bdf8;\n  text-decoration: none;\n  font-size: 11px;\n  display: flex;\n  align-items: center;\n  gap: 4px;\n}\n\n.polar3d-branding a:hover {\n  color: #7dd3fc;\n}\n";
 
-export { BRANDING_CSS, type BoundingBox, type BrandingInfo, COLOR_THEMES, type ColorTheme, type CustomColors, ExtrusionGeometry, type ExtrusionGeometryParameters, type FilamentUsage, type GCodeCommand, type GCodeLayer, type GCodeMetadata, type GCodeParameters, GCodeParser, type GCodePath, type GCodePrintInfo, GCodeRenderer, type GCodeState, GCodeViewer, type GCodeViewerOptions, type LayerData, PATH_TYPE_COLORS, type ParseResult, type PathType, type RenderOptions, type RenderedLayer, type Thumbnail, type ParseResult$1 as ViewerParseResult, WHITELISTED_DOMAINS, createBrandingElement, getBranding, injectBranding, isWhitelistedDomain, parsePathType, parsePrintInfoFromLine };
+export { BRANDING_CSS, type BoundingBox, type BrandingInfo, COLOR_THEMES, type ColorTheme, type CustomColors, ExtrusionGeometry, type ExtrusionGeometryParameters, type FilamentUsage, type GCodeCommand, type GCodeLayer, type GCodeMetadata, type GCodeParameters, GCodeParser, type GCodePath, type GCodePrintInfo, GCodeRenderer, type GCodeState, GCodeViewer, type GCodeViewerOptions, type LayerData, PATH_TYPE_COLORS, type ParseResult, type PathType, type RenderOptions, type RenderedLayer, type Thumbnail, type ParseResult$1 as ViewerParseResult, WHITELISTED_DOMAINS, createBrandingElement, gcodeBodyOffset, gcodeTextFromBuffer, getBranding, injectBranding, isGXBuffer, isWhitelistedDomain, parsePathType, parsePrintInfoFromLine };

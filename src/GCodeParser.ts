@@ -125,6 +125,20 @@ export interface ParseResult {
 // G-code Parser
 // ============================================================================
 
+/**
+ * ffslicer (FlashForge) feature markers. It prints a single shell pass, so
+ * ";shell" is the visible outer wall. ";support-end" closes a support block,
+ * after which the type is unknown until the next marker.
+ */
+const FFSLICER_FEATURE_TYPES: Record<string, PathType> = {
+    'shell': 'outer_perimeter',
+    'infill': 'infill',
+    'raft': 'support',
+    'support-start': 'support',
+    'line-support': 'support',
+    'support-end': 'unknown',
+};
+
 export class GCodeParser {
     private state: GCodeState;
     private metadata: GCodeMetadata;
@@ -380,7 +394,19 @@ export class GCodeParser {
         if (!cmdPart) return null;
 
         // Parse command and parameters
-        const tokens = cmdPart.split(/\s+/);
+        const tokens = cmdPart.split(/\s+/).filter(t => t.length > 0);
+
+        // FlashForge/Sailfish slicers number every line ("N158 G1 X.. Y.. E..")
+        // and may append a checksum ("*85"). Drop both so the real command is
+        // read instead of being mistaken for an "N" command.
+        if (tokens.length > 1 && /^[Nn]\d+$/.test(tokens[0])) {
+            tokens.shift();
+        }
+        if (tokens.length > 1 && tokens[tokens.length - 1].startsWith('*')) {
+            tokens.pop();
+        }
+        if (tokens.length === 0) return null;
+
         const gcodeMatch = tokens[0].match(/([A-Za-z])(\d+\.?\d*)/);
         if (!gcodeMatch) return null;
 
@@ -742,6 +768,14 @@ export class GCodeParser {
             return this.mapPathType(featureMatch[1].trim());
         }
 
+        // ffslicer (FlashForge) marks features with a bare comment on its own
+        // line: ";shell", ";infill", ";support-start", ";line-support",
+        // ";support-end", ";raft". Without these every path reads as "unknown".
+        const ffslicerType = FFSLICER_FEATURE_TYPES[lowerComment];
+        if (ffslicerType) {
+            return ffslicerType;
+        }
+
         return null;
     }
 
@@ -787,8 +821,12 @@ export class GCodeParser {
 
             // Simplify3D
             'outermostperimeter': 'outer_perimeter',
+            'outerperimeter': 'outer_perimeter',
             'innerperimeter': 'inner_perimeter',
+            'solidlayer': 'solid_infill',
+            'gapfill': 'solid_infill',
             'densesupport': 'support_interface',
+            'primepillar': 'prime_tower',
             'oozeshield': 'skirt',
             'raft': 'support',
 

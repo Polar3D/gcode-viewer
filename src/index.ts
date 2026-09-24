@@ -44,6 +44,9 @@ export { WHITELISTED_DOMAINS } from './types';
 // Parser utilities (for advanced usage)
 export { parsePathType, parsePrintInfoFromLine } from './parser';
 
+// File helpers: decode a .gx (FlashForge "xgcode") buffer into parsable text
+export { gcodeTextFromBuffer, gcodeBodyOffset, isGXBuffer } from './gcode-file';
+
 // Branding (REQUIRED per LICENSE for non-whitelisted domains)
 export {
   getBranding,
