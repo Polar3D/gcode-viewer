@@ -7,36 +7,36 @@ import * as BufferGeometryUtils from "three/examples/jsm/utils/BufferGeometryUti
 
 // src/types.ts
 var PATH_TYPE_COLORS = {
-  outer_perimeter: "#00CED1",
-  // Cyan/Teal
-  inner_perimeter: "#32CD32",
-  // Lime Green
-  infill: "#FFA500",
-  // Orange
-  solid_infill: "#FF6B6B",
-  // Coral/Red
-  top_solid_infill: "#FF6B6B",
-  // Same as solid
-  bottom_solid_infill: "#FF6B6B",
-  // Same as solid
-  bridge: "#40E0D0",
-  // Turquoise
-  skirt: "#6495ED",
-  // Cornflower Blue
-  brim: "#6495ED",
+  outer_perimeter: "#4285f4",
+  // Blue (Outer wall)
+  inner_perimeter: "#00ffff",
+  // Cyan (Inner wall)
+  infill: "#ff8800",
+  // Orange (Sparse infill)
+  solid_infill: "#ff8800",
+  // Orange (Internal solid infill)
+  top_solid_infill: "#ff0000",
+  // Red (Top surface)
+  bottom_solid_infill: "#0088ff",
+  // Blue (Bottom surface)
+  bridge: "#ff00ff",
+  // Magenta (Bridge)
+  skirt: "#00ff88",
+  // Green (Skirt)
+  brim: "#00ff88",
   // Same as skirt
-  support: "#DDA0DD",
-  // Plum
-  support_interface: "#DA70D6",
-  // Orchid
-  prime_tower: "#B8860B",
-  // Dark Goldenrod
-  wipe_tower: "#B8860B",
+  support: "#0000ff",
+  // Blue (Support)
+  support_interface: "#0000ff",
+  // Same as support
+  prime_tower: "#888800",
+  // Olive (Gap infill)
+  wipe_tower: "#888800",
   // Same as prime tower
-  travel: "#888888",
-  // Gray
-  unknown: "#E8E8E8"
-  // Light gray (User Sequence)
+  travel: "#808080",
+  // Gray (Unknown/travel)
+  unknown: "#aaaaaa"
+  // Light gray (Custom)
 };
 var COLOR_THEMES = [
   {
@@ -1087,6 +1087,14 @@ var PATH_TYPE_COLORS2 = {
   "unknown": "#ffffff"
   // White
 };
+var FFSLICER_FEATURE_TYPES = {
+  "shell": "outer_perimeter",
+  "infill": "infill",
+  "raft": "support",
+  "support-start": "support",
+  "line-support": "support",
+  "support-end": "unknown"
+};
 var GCodeParser = class {
   constructor() {
     this.layers = [];
@@ -1197,22 +1205,37 @@ var GCodeParser = class {
       this.parseMetadataLine(comment);
     }
   }
+  parseDurationMatch(match) {
+    if (!match) {
+      return null;
+    }
+    const days = parseInt(match[1] || "0", 10);
+    const hours = parseInt(match[2] || "0", 10);
+    const minutes = parseInt(match[3] || "0", 10);
+    const seconds = parseInt(match[4] || "0", 10);
+    const total = days * 86400 + hours * 3600 + minutes * 60 + seconds;
+    return total > 0 ? total : null;
+  }
   parseMetadataLine(comment) {
     const lowerComment = comment.toLowerCase();
-    const timePatterns = [
-      /estimated printing time[^=]*=\s*(\d+)h\s*(\d+)m\s*(\d+)s/i,
-      /TIME:(\d+)/i,
-      /print time[^:]*:\s*(\d+)h?\s*(\d*)m?\s*(\d*)s?/i
-    ];
-    for (const pattern of timePatterns) {
-      const match = comment.match(pattern);
-      if (match) {
-        if (match.length === 4) {
-          this.metadata.estimatedTime = parseInt(match[1]) * 3600 + parseInt(match[2]) * 60 + parseInt(match[3]);
-        } else if (match.length === 2) {
-          this.metadata.estimatedTime = parseInt(match[1]);
+    if (!this.metadata.estimatedTime) {
+      const hmsMatch = comment.match(/(?:estimated printing time|model printing time|total estimated time)[^=:]*[=:]\s*(?:(\d+)d\s*)?(?:(\d+)h\s*)?(?:(\d+)m\s*)?(?:(\d+)s)?/i);
+      const hmsTotal = this.parseDurationMatch(hmsMatch);
+      if (hmsTotal !== null) {
+        this.metadata.estimatedTime = hmsTotal;
+      }
+      if (!this.metadata.estimatedTime) {
+        const timeMatch = comment.match(/TIME:(\d+)/i);
+        if (timeMatch) {
+          this.metadata.estimatedTime = parseInt(timeMatch[1]);
         }
-        break;
+      }
+      if (!this.metadata.estimatedTime) {
+        const printTimeMatch = comment.match(/print time[^:]*:\s*(?:(\d+)d\s*)?(?:(\d+)h\s*)?(?:(\d+)m\s*)?(?:(\d+)s)?/i);
+        const printTimeTotal = this.parseDurationMatch(printTimeMatch);
+        if (printTimeTotal !== null) {
+          this.metadata.estimatedTime = printTimeTotal;
+        }
       }
     }
     const filamentMatch = comment.match(/filament used[^=]*=\s*([\d.]+)\s*m/i);
@@ -1272,7 +1295,14 @@ var GCodeParser = class {
     const cmdPart = parts[0].trim();
     const comment = parts[1]?.trim();
     if (!cmdPart) return null;
-    const tokens = cmdPart.split(/\s+/);
+    const tokens = cmdPart.split(/\s+/).filter((t) => t.length > 0);
+    if (tokens.length > 1 && /^[Nn]\d+$/.test(tokens[0])) {
+      tokens.shift();
+    }
+    if (tokens.length > 1 && tokens[tokens.length - 1].startsWith("*")) {
+      tokens.pop();
+    }
+    if (tokens.length === 0) return null;
     const gcodeMatch = tokens[0].match(/([A-Za-z])(\d+\.?\d*)/);
     if (!gcodeMatch) return null;
     const gcode = `${gcodeMatch[1].toLowerCase()}${parseFloat(gcodeMatch[2])}`;
@@ -1410,8 +1440,9 @@ var GCodeParser = class {
     let z = params.z ?? state.z;
     let { i, j, r } = params;
     const isExtrusion = params.e !== void 0 && params.e > 0;
-    if (!this.currentPath || this.currentPath.isExtrusion !== isExtrusion) {
-      const pathType = isExtrusion ? this.currentPath?.pathType || "unknown" : "travel";
+    const shouldStartNewPath = !this.currentPath || this.currentPath.isExtrusion !== isExtrusion || isExtrusion && this.detectedPathType !== "unknown" && this.currentPath.pathType !== this.detectedPathType;
+    if (shouldStartNewPath) {
+      const pathType = isExtrusion ? this.detectedPathType : "travel";
       this.startNewPath(pathType, isExtrusion);
     }
     if (r !== void 0) {
@@ -1568,6 +1599,10 @@ var GCodeParser = class {
     if (featureMatch) {
       return this.mapPathType(featureMatch[1].trim());
     }
+    const ffslicerType = FFSLICER_FEATURE_TYPES[lowerComment];
+    if (ffslicerType) {
+      return ffslicerType;
+    }
     return null;
   }
   mapPathType(typeStr) {
@@ -1609,8 +1644,12 @@ var GCodeParser = class {
       "supportfloor": "support_interface",
       // Simplify3D
       "outermostperimeter": "outer_perimeter",
+      "outerperimeter": "outer_perimeter",
       "innerperimeter": "inner_perimeter",
+      "solidlayer": "solid_infill",
+      "gapfill": "solid_infill",
       "densesupport": "support_interface",
+      "primepillar": "prime_tower",
       "oozeshield": "skirt",
       "raft": "support",
       // Generic
@@ -1836,6 +1875,25 @@ var GCodeRenderer = class {
     this.tubeMaterials.clear();
   }
 };
+
+// src/gcode-file.ts
+var XGCODE_SIGNATURE = "xgcode";
+var XGCODE_BODY_OFFSET_POS = 20;
+function isGXBuffer(buffer) {
+  if (buffer.byteLength < XGCODE_SIGNATURE.length) return false;
+  const head = new TextDecoder("ascii").decode(new Uint8Array(buffer, 0, XGCODE_SIGNATURE.length));
+  return head === XGCODE_SIGNATURE;
+}
+function gcodeBodyOffset(buffer) {
+  if (!isGXBuffer(buffer) || buffer.byteLength < XGCODE_BODY_OFFSET_POS + 4) return 0;
+  const offset = new DataView(buffer).getUint32(XGCODE_BODY_OFFSET_POS, true);
+  return offset > 0 && offset < buffer.byteLength ? offset : 0;
+}
+function gcodeTextFromBuffer(buffer) {
+  const offset = gcodeBodyOffset(buffer);
+  const body = offset ? buffer.slice(offset) : buffer;
+  return new TextDecoder("utf-8", { fatal: false }).decode(body);
+}
 export {
   BRANDING_CSS,
   COLOR_THEMES,
@@ -1846,8 +1904,11 @@ export {
   PATH_TYPE_COLORS2 as PATH_TYPE_COLORS,
   WHITELISTED_DOMAINS,
   createBrandingElement,
+  gcodeBodyOffset,
+  gcodeTextFromBuffer,
   getBranding,
   injectBranding,
+  isGXBuffer,
   isWhitelistedDomain,
   parsePathType,
   parsePrintInfoFromLine

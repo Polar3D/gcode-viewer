@@ -5,6 +5,49 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.3.0] - 2026-09-24
+
+### Fixed
+
+- **FlashForge `.gx` / ffslicer files render instead of showing an empty scene**
+  - Line-numbered G-code now parses: FlashForge and Sailfish slicers prefix every
+    line (`N158 G1 X.. Y.. E..`), which was read as an "N" command, so a file
+    parsed to zero layers and rendered nothing
+  - Trailing line checksums (`*85`) are ignored
+  - ffslicer feature markers (`;shell`, `;infill`, `;support-start`,
+    `;line-support`, `;support-end`, `;raft`) are mapped to path types, so paths
+    are coloured by feature instead of all rendering as "unknown" grey
+
+- **Simplify3D feature names now colour correctly**
+  - `outer perimeter`, `solid layer`, `gap fill` and `prime pillar` had no
+    mapping, so those paths rendered as "unknown" grey
+
+### Added
+
+- `gcodeTextFromBuffer(buffer)`, `gcodeBodyOffset(buffer)` and `isGXBuffer(buffer)`
+  for reading FlashForge `.gx` files, which begin with a binary header and an
+  embedded BMP thumbnail before the G-code body
+
+## [2.2.0] - 2026-03-20
+
+Published to npm; recorded here after the fact.
+
+### Fixed
+
+- Arc moves (G2/G3) missing from the preview
+- Missing print time for Bambu files: estimated time now also reads
+  "model printing time" / "total estimated time" comments
+
+### Changed
+
+- Default colour theme updated to match gcode-preview colours
+
+## [2.1.1] - 2025-12-23
+
+### Changed
+
+- Default colour theme tweaks
+
 ## [2.1.0] - 2025-12-22
 
 ### Added
